@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="glass hero"><h1>Live Air Dashboard</h1><p>Realtime AQI, device health and trend intelligence.</p></section>
+<section class="cards">
+  <article class="glass card"><h3>AQI</h3><p id="aqi">--</p><span id="aqiLabel">--</span></article>
+  <article class="glass card"><h3>Voltage</h3><p id="voltage">--</p><span>MQ135</span></article>
+  <article class="glass card"><h3>Fan</h3><p id="fan">--</p><span id="mode">--</span></article>
+  <article class="glass card"><h3>Source</h3><p id="source">--</p><span id="time">--</span></article>
+</section>
+<section class="grid2">
+  <article class="glass panel"><h2>60-Point Trend</h2><canvas id="trend" height="120"></canvas></article>
+  <article class="glass panel"><h2>Alert Feed</h2><ul id="alerts" class="alerts"></ul></article>
+</section>
+<script src="/static/dashboard.js"></script>
+{% endblock %}

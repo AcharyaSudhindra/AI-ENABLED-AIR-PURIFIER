@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="glass hero"><h1>Device Controls</h1><p>Admin-only control for mode, thresholds and fan state.</p></section>
+<section class="glass panel controls">
+  <label>Mode</label>
+  <select id="modeSelect"><option value="auto">Auto</option><option value="manual">Manual</option></select>
+  <label>Threshold Voltage</label>
+  <input type="range" min="0.2" max="3.0" step="0.01" id="thresholdRange"><p id="thresholdText" class="mini">--</p>
+  <label>Refresh Interval</label>
+  <select id="refreshSelect"><option value="1000">1 sec</option><option value="2000">2 sec</option><option value="5000">5 sec</option></select>
+  {% if role == "admin" %}
+  <div class="btns"><button id="fanOn">Fan ON</button><button id="fanOff" class="secondary">Fan OFF</button></div>
+  {% else %}
+  <p class="warn">Viewer role: control actions are disabled.</p>
+  {% endif %}
+  <p id="saveMsg" class="mini"></p>
+</section>
+<script>window.USER_ROLE = "{{ role }}";</script>
+<script src="/static/controls.js"></script>
+{% endblock %}

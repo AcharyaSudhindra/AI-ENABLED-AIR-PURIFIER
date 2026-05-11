@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="glass hero"><h1>Air Assistant</h1><p>Ask about current status, reports, and optimization tips.</p></section>
+<section class="glass panel chatbox">
+  <div id="chatLog" class="chat-log"></div>
+  <div class="chat-input">
+    <input id="chatInput" placeholder="Ask: current status, daily report, fan...">
+    <button id="sendBtn">Send</button>
+  </div>
+</section>
+<script src="/static/chatbot.js"></script>
+{% endblock %}

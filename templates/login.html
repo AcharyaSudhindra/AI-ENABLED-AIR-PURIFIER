@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - AirGuard Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="bgfx"></div>
+<div class="login-wrap">
+  <form class="glass login-card" method="post" action="/login" autocomplete="on">
+    <h1>AirGuard Pro</h1>
+    <p class="mini">Secure smart air purification dashboard</p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <label for="username">Username</label><input id="username" name="username" autocomplete="username" required>
+    <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign In</button>
+    <p class="mini">Use your assigned credentials.</p>
+  </form>
+</div>
+</body></html>

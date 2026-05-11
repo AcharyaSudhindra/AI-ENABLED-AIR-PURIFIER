@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="glass hero"><h1>Daily AQI Reports</h1><p>Persistent analytics from SQLite + CSV logger.</p></section>
+<section class="cards">
+  <article class="glass card"><h3>24h Avg AQI</h3><p id="avgAqi">--</p></article>
+  <article class="glass card"><h3>24h Peak AQI</h3><p id="peakAqi">--</p></article>
+  <article class="glass card"><h3>24h Avg Voltage</h3><p id="avgVolt">--</p></article>
+  <article class="glass card"><h3>Total Samples</h3><p id="samples">--</p></article>
+</section>
+<section class="glass panel"><h2>Daily Breakdown (7 Days)</h2><canvas id="dailyChart" height="120"></canvas></section>
+<section class="glass panel"><h2>Tabular Report</h2><div id="dailyTable"></div></section>
+<script src="/static/reports.js"></script>
+{% endblock %}
