@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AirGuard Glass Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="bg"></div>
+  <main class="app-shell">
+    <section class="glass hero">
+      <div>
+        <p class="eyebrow">AI Based Air Purifier</p>
+        <h1>Live Air Intelligence</h1>
+        <p class="sub">Real-time AQI analytics, smart fan automation, and cleaner indoor breathing.</p>
+      </div>
+      <div class="status-chip" id="sourceChip">Source: --</div>
+    </section>
+
+    <section class="grid">
+      <article class="glass metric"><h3>AQI</h3><p id="aqiValue">--</p><span id="aqiLabel">--</span></article>
+      <article class="glass metric"><h3>Voltage</h3><p id="voltageValue">--</p><span>MQ135 signal</span></article>
+      <article class="glass metric"><h3>Fan</h3><p id="fanValue">--</p><span id="modeLabel">Mode: --</span></article>
+      <article class="glass metric"><h3>ADC</h3><p id="adcValue">--</p><span>Raw sensor read</span></article>
+    </section>
+
+    <section class="grid-2">
+      <article class="glass panel">
+        <div class="panel-head"><h2>Trend (last 60 samples)</h2></div>
+        <canvas id="trendChart" height="120"></canvas>
+      </article>
+
+      <article class="glass panel controls">
+        <div class="panel-head"><h2>Smart Controls</h2></div>
+        <label>Mode</label>
+        <select id="modeSelect">
+          <option value="auto">Auto</option>
+          <option value="manual">Manual</option>
+        </select>
+
+        <label>Threshold Voltage</label>
+        <input type="range" min="0.2" max="3.0" step="0.01" id="thresholdRange" />
+        <div class="tiny" id="thresholdText">-- V</div>
+
+        <label>Refresh Interval</label>
+        <select id="refreshSelect">
+          <option value="1000">1 sec</option>
+          <option value="2000" selected>2 sec</option>
+          <option value="3000">3 sec</option>
+          <option value="5000">5 sec</option>
+        </select>
+
+        <div class="btn-row">
+          <button id="fanOnBtn">Fan ON</button>
+          <button id="fanOffBtn" class="secondary">Fan OFF</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="glass panel">
+      <div class="panel-head"><h2>Health Alerts</h2><span id="lastSeen">Last update: --</span></div>
+      <ul id="alerts" class="alerts"></ul>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
