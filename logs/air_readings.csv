@@ -1956,3 +1956,17 @@ timestamp,adc,voltage,aqi,aqi_label,fan_on,mode,threshold_voltage,source
 2026-05-12T15:39:42,1444,1.164,176,Very Unhealthy,0,auto,1.2,mock
 2026-05-12T15:39:44,1359,1.096,165,Very Unhealthy,0,auto,1.2,mock
 2026-05-12T15:39:47,1259,1.015,153,Very Unhealthy,0,auto,1.2,mock
+2026-05-12T15:39:49,1212,0.977,148,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:39:51,1109,0.894,135,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:39:53,992,0.8,121,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:39:55,1014,0.817,123,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:39:57,1014,0.818,123,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:39:59,1007,0.812,122,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:01,948,0.764,115,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:03,1009,0.814,123,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:05,1088,0.877,132,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:07,1100,0.887,134,Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:09,1289,1.039,157,Very Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:11,1339,1.079,163,Very Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:13,1401,1.129,171,Very Unhealthy,0,auto,1.2,mock
+2026-05-12T15:40:15,1509,1.216,184,Very Unhealthy,1,auto,1.2,mock
