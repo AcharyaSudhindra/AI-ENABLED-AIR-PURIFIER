@@ -136,7 +136,3 @@ SECURITY NOTES
 - Change default credentials
 - Set FLASK_SECRET_KEY
 - For HTTPS deployments set COOKIE_SECURE=1
-
-LICENSE
-
-Add your license file (LICENSE) - MIT recommended.
