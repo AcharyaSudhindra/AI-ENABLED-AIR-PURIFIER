@@ -340,17 +340,58 @@ def _chatbot_answer(msg: str) -> str:
     stats = _latest_stats()
     avg_aqi = int(stats.get("avg_aqi") or 0)
     peak = int(stats.get("peak_aqi") or 0)
+    sample = last_sample or get_latest_sample(persist=False)
+    aqi = int(sample.get("aqi", 0))
+    fan = "ON" if sample.get("fan_on") else "OFF"
+    mode = str(sample.get("mode", "auto")).upper()
+    voltage = float(sample.get("voltage", 0.0))
+
+    if aqi <= 50:
+        risk = "good"
+        action = "Current air is healthy. Keep purifier on LOW/AUTO for maintenance."
+    elif aqi <= 100:
+        risk = "moderate"
+        action = "Air is moderate. AUTO mode is recommended."
+    elif aqi <= 150:
+        risk = "unhealthy"
+        action = "Air is unhealthy for sensitive groups. Keep fan HIGH and reduce indoor pollutants."
+    else:
+        risk = "hazardous"
+        action = "Air quality is hazardous. Run purifier high, ventilate, and avoid exposure."
 
     if any(k in text for k in ["status", "now", "current"]):
-        sample = last_sample or get_latest_sample(persist=False)
-        return f"Current AQI is {sample['aqi']} ({sample['aqi_label']}). Fan is {'ON' if sample['fan_on'] else 'OFF'} in {sample['mode'].upper()} mode."
+        return (
+            f"Current AQI is {aqi} ({sample['aqi_label']}). "
+            f"Voltage is {voltage:.2f}V. Fan is {fan} in {mode} mode. "
+            f"Risk level: {risk.upper()}. {action}"
+        )
     if "report" in text or "daily" in text:
-        return f"In the last 24h, average AQI is {avg_aqi} and peak AQI is {peak}. Open Reports page for day-wise breakdown."
+        return (
+            f"Daily report summary: 24h average AQI is {avg_aqi}, peak AQI is {peak}. "
+            f"Current AQI is {aqi} ({sample['aqi_label']}). "
+            f"Open Reports page for day-wise trend and fan runtime analysis."
+        )
+    if "recommend" in text or "what should i do" in text:
+        return (
+            f"My recommendation now: {action} "
+            f"Current mode is {mode}; fan is {fan}. "
+            f"If AQI stays above 100 for long periods, check filter and room ventilation."
+        )
     if "improve" in text or "tips" in text:
-        return "Keep windows briefly open in early morning, replace filters on schedule, avoid indoor smoke/aerosols, and keep purifier in AUTO mode near breathing zone height."
+        return (
+            "Top improvements: keep purifier in AUTO near breathing-zone height, "
+            "avoid indoor smoke/aerosols, clean dust sources weekly, replace filters on schedule, "
+            "and ventilate briefly when outdoor air is better than indoor air."
+        )
     if "fan" in text:
-        return "In AUTO mode the fan responds to threshold voltage. In MANUAL mode, only admin can force Fan ON/OFF from Controls page."
-    return "I can help with current air status, daily reports, fan behavior, and indoor air improvement tips. Try: 'current status' or 'daily report'."
+        return (
+            f"Fan is currently {fan} in {mode} mode. "
+            "In AUTO, fan follows threshold voltage. In MANUAL, admin can force ON/OFF from Controls page."
+        )
+    return (
+        "I can help with live status, daily reports, fan recommendations, and air-quality optimization. "
+        "Try: 'current status', 'daily report', or 'fan recommendation now'."
+    )
 
 
 @app.route("/")

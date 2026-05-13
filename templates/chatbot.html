@@ -1,12 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="glass hero"><h1>Air Assistant</h1><p>Ask about current status, reports, and optimization tips.</p></section>
+<section class="glass hero">
+  <h1>Air Assistant</h1>
+  <p>Context-aware guidance from your live ESP32 sensor stream and daily reports.</p>
+</section>
+
 <section class="glass panel chatbox">
+  <div class="quick-row">
+    <button class="chip" data-q="current status">Current Status</button>
+    <button class="chip" data-q="daily report">Daily Report</button>
+    <button class="chip" data-q="how to improve air quality">Improve Air</button>
+    <button class="chip" data-q="fan recommendation now">Fan Recommendation</button>
+  </div>
+
   <div id="chatLog" class="chat-log"></div>
+
   <div class="chat-input">
-    <input id="chatInput" placeholder="Ask: current status, daily report, fan...">
+    <input id="chatInput" placeholder="Ask anything about AQI, trend, fan, or recommendations...">
     <button id="sendBtn">Send</button>
   </div>
 </section>
-<script src="/static/chatbot.js"></script>
+<script src="/static/chatbot.js?v=20260513b"></script>
 {% endblock %}
