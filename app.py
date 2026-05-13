@@ -1,8 +1,9 @@
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session
+from flask import Flask, Response, jsonify, render_template, request, redirect, url_for, session
 from collections import deque
 from datetime import datetime, timedelta
 from functools import wraps
 import csv
+import json
 import math
 import os
 import random
@@ -40,7 +41,7 @@ state = {
     "threshold_voltage": 1.20,
     "fan_on": False,
     "refresh_ms": 2000,
-    "source": "mock" if not ESP32_BASE_URL else "esp32",
+    "source": "esp32" if ESP32_BASE_URL else "esp32-offline",
 }
 
 history = deque(maxlen=800)
@@ -235,17 +236,47 @@ def _persist_sample(sample: dict):
 def get_latest_sample(persist: bool = True) -> dict:
     global last_sample
     try:
-        sample = _read_esp32_payload() if ESP32_BASE_URL else _mock_sensor_payload()
+        if not ESP32_BASE_URL:
+            raise RuntimeError("ESP32_BASE_URL not configured")
+        sample = _read_esp32_payload()
     except Exception:
-        sample = _mock_sensor_payload()
-        sample["source"] = "mock-fallback"
+        # If ESP32 mode is configured, do not inject mock values on transient errors.
+        # Return the last real sample so OLED/web stay aligned.
+        if ESP32_BASE_URL and last_sample is not None:
+            sample = dict(last_sample)
+            sample["source"] = "esp32-stale"
+            sample["timestamp"] = _iso_now()
+        elif ESP32_BASE_URL and last_sample is None:
+            sample = {
+                "adc": 0,
+                "voltage": 0.0,
+                "aqi": 0,
+                "aqi_label": "No Data",
+                "fan_on": False,
+                "mode": state["mode"],
+                "threshold_voltage": state["threshold_voltage"],
+                "timestamp": _iso_now(),
+                "source": "esp32-offline",
+            }
+        else:
+            sample = {
+                "adc": 0,
+                "voltage": 0.0,
+                "aqi": 0,
+                "aqi_label": "No Data",
+                "fan_on": False,
+                "mode": state["mode"],
+                "threshold_voltage": state["threshold_voltage"],
+                "timestamp": _iso_now(),
+                "source": "esp32-offline",
+            }
 
     with state_lock:
         state["source"] = sample["source"]
 
     history.append(sample)
     last_sample = sample
-    if persist:
+    if persist and sample.get("source") not in {"esp32-stale", "esp32-offline"}:
         _persist_sample(sample)
     return sample
 
@@ -385,8 +416,28 @@ def chatbot_page():
 @app.route("/api/live")
 @require_api_login
 def api_live():
-    sample = last_sample or get_latest_sample(persist=False)
+    # Force a fresh read for better OLED/web sync.
+    sample = get_latest_sample(persist=False)
     return jsonify(sample)
+
+
+@app.route("/api/stream")
+@require_api_login
+def api_stream():
+    def event_stream():
+        while True:
+            sample = get_latest_sample(persist=False)
+            payload = json.dumps(sample)
+            yield f"retry: 2000\n"
+            yield f"data: {payload}\n\n"
+            sleep_ms = state.get("refresh_ms", 2000)
+            time.sleep(max(0.5, sleep_ms / 1000.0))
+
+    return Response(
+        event_stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/api/history")

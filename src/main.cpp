@@ -28,6 +28,9 @@ bool samplesReady = false;
 
 unsigned long lastDisplayMs = 0;
 unsigned long bootMs = 0;
+float latestVoltage = 0.0f;
+int latestAdc = 0;
+int latestAqi = 0;
 
 float readSmoothedVoltage() {
   int raw = analogRead(MQ135_PIN);
@@ -78,13 +81,10 @@ void updateControl(float voltage) {
 }
 
 void handleStatus() {
-  float voltage = readSmoothedVoltage();
-  int adc = (int)((voltage / 3.3f) * 4095.0f);
-
   DynamicJsonDocument doc(256);
-  doc["adc"] = adc;
-  doc["voltage"] = voltage;
-  doc["aqi"] = voltageToAQI(voltage);
+  doc["adc"] = latestAdc;
+  doc["voltage"] = latestVoltage;
+  doc["aqi"] = latestAqi;
   doc["fan_on"] = fanOn;
   doc["mode"] = autoMode ? "auto" : "manual";
   doc["threshold_voltage"] = thresholdVoltage;
@@ -197,6 +197,9 @@ void setup() {
   }
 
   analogReadResolution(12);
+  latestVoltage = readSmoothedVoltage();
+  latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);
+  latestAqi = voltageToAQI(latestVoltage);
   connectWiFi();
 
   server.on("/api/status", HTTP_GET, handleStatus);
@@ -220,6 +223,9 @@ void loop() {
   server.handleClient();
 
   float voltage = readSmoothedVoltage();
+  latestVoltage = voltage;
+  latestAdc = (int)((voltage / 3.3f) * 4095.0f);
+  latestAqi = voltageToAQI(voltage);
   updateControl(voltage);
 
   Serial.print("Voltage: ");
