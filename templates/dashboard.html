@@ -11,5 +11,17 @@
   <article class="glass panel"><h2>60-Point Trend</h2><canvas id="trend" height="120"></canvas></article>
   <article class="glass panel"><h2>Alert Feed</h2><ul id="alerts" class="alerts"></ul></article>
 </section>
-<script src="/static/dashboard.js?v=20260513a"></script>
+<section class="grid2">
+  <article class="glass panel"><h2>Predictive AQI (Next 2 Hours)</h2><canvas id="predictChart" height="120"></canvas></article>
+  <article class="glass panel">
+    <h2>Filter Health Intelligence</h2>
+    <div class="mini">Health: <strong id="filterHealth">--</strong></div>
+    <div class="mini">Status: <strong id="filterStatus">--</strong></div>
+    <div class="mini">Runtime: <strong id="filterRuntime">--</strong></div>
+    <div class="mini">Load Score: <strong id="filterLoad">--</strong></div>
+    <button id="resetFilterBtn" class="secondary" style="margin-top:10px;">Reset Filter Counter</button>
+  </article>
+</section>
+<script>window.USER_ROLE = "{{ role }}";</script>
+<script src="/static/dashboard.js?v=20260513b"></script>
 {% endblock %}

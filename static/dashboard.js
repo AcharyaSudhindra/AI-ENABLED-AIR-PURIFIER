@@ -1,5 +1,6 @@
 const q = (id) => document.getElementById(id);
 const chart = new Chart(q("trend").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"AQI",data:[],borderColor:"#45b7ff",tension:.3,pointRadius:0},{label:"Voltage",data:[],borderColor:"#ff9f43",tension:.3,pointRadius:0}]},options:{plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
+const predictChart = new Chart(q("predictChart").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"Predicted AQI",data:[],borderColor:"#ff9f43",backgroundColor:"rgba(255,159,67,.2)",fill:true,tension:.35,pointRadius:1}]},options:{plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
 let pollTimer = null;
 
 function alerts(s){
@@ -33,6 +34,22 @@ async function refreshHistory(){
   }
 }
 
+async function refreshPredict(){
+  const p = await fetch('/api/predict?horizon=12').then(r=>r.json());
+  const points = p.points || [];
+  predictChart.data.labels = points.map(x => x.time);
+  predictChart.data.datasets[0].data = points.map(x => x.aqi);
+  predictChart.update();
+}
+
+async function refreshFilterHealth(){
+  const f = await fetch('/api/filter-health').then(r=>r.json());
+  q('filterHealth').textContent = `${Number(f.health_pct||0).toFixed(1)}%`;
+  q('filterStatus').textContent = f.status || '--';
+  q('filterRuntime').textContent = `${Number(f.runtime_hours||0).toFixed(2)} h`;
+  q('filterLoad').textContent = Number(f.load_score||0).toFixed(1);
+}
+
 function renderAlerts(live){
   const box=q('alerts'); box.innerHTML='';
   const offline = live.source === "esp32-offline";
@@ -51,6 +68,8 @@ async function refresh(){
   renderLive(live);
   renderAlerts(live);
   await refreshHistory();
+  await refreshPredict();
+  await refreshFilterHealth();
 }
 
 function startRealtime(){
@@ -75,3 +94,12 @@ function startRealtime(){
 }
 
 startRealtime();
+
+if (window.USER_ROLE !== 'admin') {
+  const b = q('resetFilterBtn');
+  if (b) b.style.display = 'none';
+}
+q('resetFilterBtn')?.addEventListener('click', async () => {
+  await fetch('/api/filter/reset', { method: 'POST' });
+  await refreshFilterHealth();
+});

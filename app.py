@@ -43,6 +43,14 @@ state = {
     "refresh_ms": 2000,
     "source": "esp32" if ESP32_BASE_URL else "esp32-offline",
 }
+filter_state = {
+    "health_pct": 100.0,
+    "runtime_hours": 0.0,
+    "load_score": 0.0,
+    "status": "Excellent",
+    "last_reset": _iso_now() if "_iso_now" in globals() else "",
+}
+last_filter_update_ts = time.time()
 
 history = deque(maxlen=800)
 last_sample = None
@@ -123,6 +131,10 @@ def _iso_now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+if not filter_state.get("last_reset"):
+    filter_state["last_reset"] = _iso_now()
+
+
 def _aqi_from_voltage(voltage: float) -> int:
     scaled = int((voltage / 3.3) * 500)
     return max(0, min(500, scaled))
@@ -138,6 +150,61 @@ def _aqi_label(aqi: int) -> str:
     if aqi <= 200:
         return "Very Unhealthy"
     return "Hazardous"
+
+
+def _filter_status(health_pct: float) -> str:
+    if health_pct >= 75:
+        return "Excellent"
+    if health_pct >= 50:
+        return "Good"
+    if health_pct >= 30:
+        return "Replace Soon"
+    return "Critical"
+
+
+def _update_filter_health(sample: dict) -> None:
+    global last_filter_update_ts
+    now_ts = time.time()
+    dt_hours = max(0.0, (now_ts - last_filter_update_ts) / 3600.0)
+    last_filter_update_ts = now_ts
+
+    aqi = float(sample.get("aqi", 0))
+    fan_on = bool(sample.get("fan_on", False))
+    if not fan_on:
+        return
+
+    # Base lifetime model: 720 runtime hours at moderate load, adjusted by AQI.
+    load_factor = 1.0 + max(0.0, (aqi - 70.0) / 220.0)
+    wear_pct = (dt_hours / 720.0) * 100.0 * load_factor
+    filter_state["health_pct"] = max(0.0, filter_state["health_pct"] - wear_pct)
+    filter_state["runtime_hours"] += dt_hours
+    filter_state["load_score"] = 0.85 * filter_state["load_score"] + 0.15 * min(200.0, aqi)
+    filter_state["status"] = _filter_status(filter_state["health_pct"])
+
+
+def _predict_aqi_points(horizon: int = 12) -> list:
+    samples = list(history)[-60:]
+    if len(samples) < 6:
+        return []
+
+    aqi_vals = [float(s.get("aqi", 0)) for s in samples]
+    n = len(aqi_vals)
+    x_mean = (n - 1) / 2.0
+    y_mean = sum(aqi_vals) / n
+    denom = sum((i - x_mean) ** 2 for i in range(n)) or 1.0
+    slope = sum((i - x_mean) * (aqi_vals[i] - y_mean) for i in range(n)) / denom
+    interval_sec = max(1.0, state.get("refresh_ms", 2000) / 1000.0)
+    # Convert per-sample slope into forecast step (10-minute points).
+    samples_per_step = max(1.0, 600.0 / interval_sec)
+    drift_per_step = slope * samples_per_step
+
+    base = aqi_vals[-1]
+    out = []
+    for i in range(1, horizon + 1):
+        pred = max(0.0, min(500.0, base + drift_per_step * i))
+        ts = datetime.now() + timedelta(minutes=10 * i)
+        out.append({"time": ts.strftime("%H:%M"), "aqi": round(pred, 1)})
+    return out
 
 
 def _mock_sensor_payload() -> dict:
@@ -273,6 +340,10 @@ def get_latest_sample(persist: bool = True) -> dict:
 
     with state_lock:
         state["source"] = sample["source"]
+
+    _update_filter_health(sample)
+    sample["filter_health_pct"] = round(filter_state["health_pct"], 1)
+    sample["filter_status"] = filter_state["status"]
 
     history.append(sample)
     last_sample = sample
@@ -460,6 +531,38 @@ def api_live():
     # Force a fresh read for better OLED/web sync.
     sample = get_latest_sample(persist=False)
     return jsonify(sample)
+
+
+@app.route("/api/predict")
+@require_api_login
+def api_predict():
+    horizon = int(request.args.get("horizon", 12))
+    horizon = max(3, min(horizon, 24))
+    return jsonify({"points": _predict_aqi_points(horizon)})
+
+
+@app.route("/api/filter-health")
+@require_api_login
+def api_filter_health():
+    return jsonify({
+        "health_pct": round(filter_state["health_pct"], 1),
+        "runtime_hours": round(filter_state["runtime_hours"], 2),
+        "load_score": round(filter_state["load_score"], 1),
+        "status": filter_state["status"],
+        "last_reset": filter_state["last_reset"],
+    })
+
+
+@app.route("/api/filter/reset", methods=["POST"])
+@require_api_login
+@require_admin_api
+def api_filter_reset():
+    filter_state["health_pct"] = 100.0
+    filter_state["runtime_hours"] = 0.0
+    filter_state["load_score"] = 0.0
+    filter_state["status"] = "Excellent"
+    filter_state["last_reset"] = _iso_now()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/stream")
