@@ -11,6 +11,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 #define MQ135_PIN 34
 #define RELAY_PIN 25
+#define GP2Y_VO_PIN 35
+#define GP2Y_LED_PIN 26
 
 const char* WIFI_SSID = "Sudhindra";
 const char* WIFI_PASSWORD = "sudhindra2024@";
@@ -31,6 +33,7 @@ unsigned long bootMs = 0;
 float latestVoltage = 0.0f;
 int latestAdc = 0;
 int latestAqi = 0;
+float latestPm25 = 0.0f;
 
 float readSmoothedVoltage() {
   int raw = analogRead(MQ135_PIN);
@@ -61,6 +64,21 @@ int voltageToAQI(float voltage) {
   return aqi;
 }
 
+float readDustPM25() {
+  // GP2Y1010 timing sequence
+  digitalWrite(GP2Y_LED_PIN, LOW);
+  delayMicroseconds(280);
+  int raw = analogRead(GP2Y_VO_PIN);
+  delayMicroseconds(40);
+  digitalWrite(GP2Y_LED_PIN, HIGH);
+  delayMicroseconds(9680);
+
+  float vo = (raw / 4095.0f) * 3.3f;
+  float dust = (vo - 0.6f) / 0.005f; // ug/m3 approximation
+  if (dust < 0.0f) dust = 0.0f;
+  return dust;
+}
+
 void setFan(bool on) {
   fanOn = on;
   digitalWrite(RELAY_PIN, fanOn ? HIGH : LOW);
@@ -85,6 +103,7 @@ void handleStatus() {
   doc["adc"] = latestAdc;
   doc["voltage"] = latestVoltage;
   doc["aqi"] = latestAqi;
+  doc["pm25"] = latestPm25;
   doc["fan_on"] = fanOn;
   doc["mode"] = autoMode ? "auto" : "manual";
   doc["threshold_voltage"] = thresholdVoltage;
@@ -151,12 +170,15 @@ void drawOLED(float voltage) {
   display.println("V");
 
   display.setCursor(0, 38);
-  display.print("AQI: ");
-  display.println(aqi);
+  display.print("PM2.5:");
+  display.print(latestPm25, 1);
+  display.println("ug");
 
   display.setCursor(0, 50);
-  display.print("Fan:");
+  display.print("F:");
   display.print(fanOn ? "ON " : "OFF");
+  display.print(" A:");
+  display.print(aqi);
   display.print(" ");
   display.print(autoMode ? "A" : "M");
 
@@ -189,6 +211,8 @@ void setup() {
   bootMs = millis();
 
   pinMode(RELAY_PIN, OUTPUT);
+  pinMode(GP2Y_LED_PIN, OUTPUT);
+  digitalWrite(GP2Y_LED_PIN, HIGH);
   setFan(false);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -200,6 +224,7 @@ void setup() {
   latestVoltage = readSmoothedVoltage();
   latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);
   latestAqi = voltageToAQI(latestVoltage);
+  latestPm25 = readDustPM25();
   connectWiFi();
 
   server.on("/api/status", HTTP_GET, handleStatus);
@@ -226,12 +251,15 @@ void loop() {
   latestVoltage = voltage;
   latestAdc = (int)((voltage / 3.3f) * 4095.0f);
   latestAqi = voltageToAQI(voltage);
+  latestPm25 = readDustPM25();
   updateControl(voltage);
 
   Serial.print("Voltage: ");
   Serial.print(voltage, 3);
   Serial.print(" V | Fan: ");
-  Serial.println(fanOn ? "ON" : "OFF");
+  Serial.print(fanOn ? "ON" : "OFF");
+  Serial.print(" | PM2.5: ");
+  Serial.println(latestPm25, 1);
 
   if (millis() - lastDisplayMs > 1000) {
     drawOLED(voltage);

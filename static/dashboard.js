@@ -8,7 +8,7 @@ function alerts(s){
   if(s.aqi>150) out.push(["bad",`Hazardous AQI ${s.aqi}. Keep purifier ON and ventilate.`]);
   else if(s.aqi>100) out.push(["warn",`Unhealthy AQI ${s.aqi}. Limit prolonged exposure.`]);
   else out.push(["good",`Air quality is ${s.aqi_label}.`]);
-  if(s.voltage>=s.threshold_voltage) out.push(["warn","Sensor above threshold, fan should remain active."]);
+  if(s.voltage>=s.threshold_voltage) out.push(["warn","MQ135 above threshold, fan should remain active."]);
   return out;
 }
 
@@ -16,7 +16,7 @@ function renderLive(live){
   const offline = live.source === "esp32-offline";
   q('aqi').textContent = offline ? "--" : live.aqi;
   q('aqiLabel').textContent = offline ? "Waiting for ESP32" : live.aqi_label;
-  q('voltage').textContent = offline ? "--" : `${live.voltage.toFixed(2)} V`;
+  q('pm25').textContent = offline ? "--" : `${Number(live.pm25 || 0).toFixed(1)}`;
   q('fan').textContent = offline ? "--" : (live.fan_on ? "ON" : "OFF");
   q('mode').textContent = offline ? "Mode --" : `Mode ${live.mode.toUpperCase()}`;
   q('source').textContent = live.source === "esp32-stale" ? "esp32 (stale)" : live.source;
