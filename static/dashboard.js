@@ -1,5 +1,5 @@
 const q = (id) => document.getElementById(id);
-const chart = new Chart(q("trend").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"AQI",data:[],borderColor:"#42d7ff",tension:.3,pointRadius:0},{label:"Voltage",data:[],borderColor:"#3ee0a2",tension:.3,pointRadius:0}]},options:{plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
+const chart = new Chart(q("trend").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"AQI",data:[],borderColor:"#45b7ff",tension:.3,pointRadius:0},{label:"Voltage",data:[],borderColor:"#ff9f43",tension:.3,pointRadius:0}]},options:{plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
 let pollTimer = null;
 
 function alerts(s){
