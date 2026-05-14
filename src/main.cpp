@@ -35,6 +35,8 @@ float latestVoltage = 0.0f;
 int latestAdc = 0;
 int latestAqi = 0;
 float latestPm25 = 0.0f;
+float pm25Filtered = 0.0f;
+float gp2yBaseVoltage = 0.58f; // tune 0.55-0.65 based on your board
 
 float readSmoothedVoltage() {
   int raw = analogRead(MQ135_PIN);
@@ -65,7 +67,7 @@ int voltageToAQI(float voltage) {
   return aqi;
 }
 
-float readDustPM25() {
+float readDustPM25Raw() {
   // GP2Y1010 timing sequence
   digitalWrite(GP2Y_LED_PIN, LOW);
   delayMicroseconds(280);
@@ -75,9 +77,34 @@ float readDustPM25() {
   delayMicroseconds(9680);
 
   float vo = (raw / 4095.0f) * 3.3f;
-  float dust = (vo - 0.6f) / 0.005f; // ug/m3 approximation
+  float dust = (vo - gp2yBaseVoltage) / 0.005f; // ug/m3 approximation
   if (dust < 0.0f) dust = 0.0f;
   return dust;
+}
+
+float readDustPM25Stable() {
+  // Multi-sample median-ish averaging to reduce spikes.
+  const int n = 5;
+  float vals[n];
+  for (int i = 0; i < n; i++) {
+    vals[i] = readDustPM25Raw();
+  }
+  // Simple trimmed mean: drop min/max.
+  float minv = vals[0], maxv = vals[0], sum = 0.0f;
+  for (int i = 0; i < n; i++) {
+    if (vals[i] < minv) minv = vals[i];
+    if (vals[i] > maxv) maxv = vals[i];
+    sum += vals[i];
+  }
+  float mean = (sum - minv - maxv) / (n - 2);
+
+  // Exponential smoothing to prevent sudden drops to zero.
+  const float alpha = 0.18f;
+  pm25Filtered = (pm25Filtered * (1.0f - alpha)) + (mean * alpha);
+
+  // Noise floor clamp.
+  if (pm25Filtered < 1.0f) pm25Filtered = 0.0f;
+  return pm25Filtered;
 }
 
 void setFan(bool on) {
@@ -226,7 +253,7 @@ void setup() {
   latestVoltage = readSmoothedVoltage();
   latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);
   latestAqi = voltageToAQI(latestVoltage);
-  latestPm25 = readDustPM25();
+  latestPm25 = readDustPM25Stable();
   connectWiFi();
 
   server.on("/api/status", HTTP_GET, handleStatus);
@@ -253,7 +280,7 @@ void loop() {
   latestVoltage = voltage;
   latestAdc = (int)((voltage / 3.3f) * 4095.0f);
   latestAqi = voltageToAQI(voltage);
-  latestPm25 = readDustPM25();
+  latestPm25 = readDustPM25Stable();
   updateControl(voltage);
 
   Serial.print("Voltage: ");
