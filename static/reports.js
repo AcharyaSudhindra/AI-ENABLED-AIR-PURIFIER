@@ -1,5 +1,5 @@
 const el=(id)=>document.getElementById(id);
-const c=new Chart(el('dailyChart').getContext('2d'),{type:'bar',data:{labels:[],datasets:[{label:'Avg AQI',data:[],backgroundColor:'rgba(69,183,255,.65)'},{label:'Peak AQI',data:[],backgroundColor:'rgba(255,159,67,.68)'}]},options:{plugins:{legend:{labels:{color:'#eef5ff'}}},scales:{x:{ticks:{color:'#c2cde0'}},y:{ticks:{color:'#c2cde0'}}}}});
+const c=new Chart(el('dailyChart').getContext('2d'),{type:'bar',data:{labels:[],datasets:[{label:'Avg AQI',data:[],backgroundColor:'rgba(47,215,161,.64)'},{label:'Peak AQI',data:[],backgroundColor:'rgba(242,178,79,.68)'}]},options:{plugins:{legend:{labels:{color:'#eef5ff'}}},scales:{x:{ticks:{color:'#c2cde0'}},y:{ticks:{color:'#c2cde0'}}}}});
 
 async function load(){
  const s=await fetch('/api/reports/summary').then(r=>r.json());

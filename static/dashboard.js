@@ -1,7 +1,53 @@
 const q = (id) => document.getElementById(id);
-const chart = new Chart(q("trend").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"AQI",data:[],borderColor:"#45b7ff",tension:.3,pointRadius:0},{label:"Voltage",data:[],borderColor:"#ff9f43",tension:.3,pointRadius:0}]},options:{plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
-const predictChart = new Chart(q("predictChart").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"Predicted AQI",data:[],borderColor:"#ff9f43",backgroundColor:"rgba(255,159,67,.2)",fill:true,tension:.35,pointRadius:1}]},options:{plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
+const lastVals = {};
+
+const chart = new Chart(q("trend").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"AQI",data:[],borderColor:"#2fd7a1",tension:.3,pointRadius:0},{label:"Voltage",data:[],borderColor:"#f2b24f",tension:.3,pointRadius:0}]},options:{animation:{duration:520,easing:'easeOutCubic'},plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
+const predictChart = new Chart(q("predictChart").getContext("2d"), {type:"line",data:{labels:[],datasets:[{label:"Predicted AQI",data:[],borderColor:"#f2b24f",backgroundColor:"rgba(242,178,79,.22)",fill:true,tension:.35,pointRadius:1}]},options:{animation:{duration:650,easing:'easeOutQuart'},plugins:{legend:{labels:{color:"#eef5ff"}}},scales:{x:{ticks:{color:"#c2cde0"}},y:{ticks:{color:"#c2cde0"}}}}});
 let pollTimer = null;
+
+function toast(msg){
+  const t = q('appToast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+function pulseValue(id, value){
+  const el = q(id);
+  if (!el) return;
+  if (lastVals[id] !== value){
+    lastVals[id] = value;
+    const card = el.closest('.card') || el.closest('.panel') || el;
+    card.classList.remove('live-pulse');
+    void card.offsetWidth;
+    card.classList.add('live-pulse');
+  }
+}
+
+function animateNumber(el, to, suffix=''){
+  if (!el || !Number.isFinite(to)) return;
+  const from = Number(el.dataset.prevVal || 0);
+  const start = performance.now();
+  const dur = 420;
+  function frame(t){
+    const p = Math.min(1, (t-start)/dur);
+    const eased = 1 - Math.pow(1-p, 3);
+    const val = from + (to - from) * eased;
+    el.textContent = (Math.abs(to) >= 100 ? val.toFixed(0) : val.toFixed(1)) + suffix;
+    if (p < 1) requestAnimationFrame(frame);
+    else el.dataset.prevVal = String(to);
+  }
+  requestAnimationFrame(frame);
+}
+
+function setRing(id, pct){
+  const el = q(id);
+  if (!el) return;
+  const p = Math.max(0, Math.min(100, pct));
+  el.style.setProperty('--pct', `${p}%`);
+}
 
 function alerts(s){
   const out=[];
@@ -13,15 +59,34 @@ function alerts(s){
 }
 
 function renderLive(live){
+  const noData = live.source === "esp32-offline" && Number(live.aqi || 0) === 0 && Number(live.pm25 || 0) === 0 && Number(live.voltage || 0) === 0;
   const offline = live.source === "esp32-offline";
-  q('aqi').textContent = offline ? "--" : live.aqi;
-  q('aqiLabel').textContent = offline ? "Waiting for ESP32" : live.aqi_label;
-  q('pm25').textContent = offline ? "--" : `${Number(live.pm25 || 0).toFixed(1)}`;
-  q('fan').textContent = offline ? "--" : (live.fan_on ? "ON" : "OFF");
-  q('mode').textContent = offline ? "Mode --" : `Mode ${live.mode.toUpperCase()}`;
+  const aqiEl = q('aqi');
+  const pmEl = q('pm25');
+  if (noData){
+    if (aqiEl) aqiEl.textContent = '--';
+    if (pmEl) pmEl.textContent = '--';
+  } else {
+    animateNumber(aqiEl, Number(live.aqi || 0));
+    animateNumber(pmEl, Number(live.pm25 || 0));
+    setRing('aqiRing', (Number(live.aqi||0)/500)*100);
+  }
+
+  q('aqiLabel').textContent = noData ? "Waiting for ESP32" : live.aqi_label;
+  q('fan').textContent = noData ? "--" : (live.fan_on ? "ON" : "OFF");
+  q('mode').textContent = noData ? "Mode --" : `Mode ${live.mode.toUpperCase()}`;
   q('source').textContent = live.source === "esp32-stale" ? "esp32 (stale)" : live.source;
   q('time').textContent=live.timestamp;
 
+  const fanIcon = q('fanIcon');
+  if (fanIcon) {
+    fanIcon.classList.toggle('spin', !!live.fan_on && !noData);
+  }
+
+  pulseValue('aqi', live.aqi);
+  pulseValue('pm25', live.pm25);
+  pulseValue('fan', live.fan_on);
+  pulseValue('source', live.source);
 }
 
 async function refreshHistory(){
@@ -44,10 +109,14 @@ async function refreshPredict(){
 
 async function refreshFilterHealth(){
   const f = await fetch('/api/filter-health').then(r=>r.json());
-  q('filterHealth').textContent = `${Number(f.health_pct||0).toFixed(1)}%`;
+  const health = Number(f.health_pct||0);
+  q('filterHealth').textContent = `${health.toFixed(1)}%`;
   q('filterStatus').textContent = f.status || '--';
   q('filterRuntime').textContent = `${Number(f.runtime_hours||0).toFixed(2)} h`;
   q('filterLoad').textContent = Number(f.load_score||0).toFixed(1);
+  q('filterRingVal').textContent = `${health.toFixed(0)}%`;
+  setRing('filterRing', health);
+  pulseValue('filterHealth', health);
 }
 
 function renderAlerts(live){
@@ -80,6 +149,8 @@ function startRealtime(){
       renderLive(live);
       renderAlerts(live);
       await refreshHistory();
+      await refreshPredict();
+      await refreshFilterHealth();
     };
     source.onerror = () => {
       source.close();
@@ -102,4 +173,5 @@ if (window.USER_ROLE !== 'admin') {
 q('resetFilterBtn')?.addEventListener('click', async () => {
   await fetch('/api/filter/reset', { method: 'POST' });
   await refreshFilterHealth();
+  toast('Filter counter reset');
 });

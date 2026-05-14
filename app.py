@@ -55,6 +55,7 @@ last_filter_update_ts = time.time()
 history = deque(maxlen=800)
 last_sample = None
 stop_event = threading.Event()
+last_esp32_error = ""
 
 
 def _db_conn():
@@ -303,12 +304,14 @@ def _persist_sample(sample: dict):
 
 
 def get_latest_sample(persist: bool = True) -> dict:
-    global last_sample
+    global last_sample, last_esp32_error
     try:
         if not ESP32_BASE_URL:
             raise RuntimeError("ESP32_BASE_URL not configured")
         sample = _read_esp32_payload()
-    except Exception:
+        last_esp32_error = ""
+    except Exception as e:
+        last_esp32_error = str(e)
         # If ESP32 mode is configured, do not inject mock values on transient errors.
         # Return the last real sample so OLED/web stay aligned.
         if ESP32_BASE_URL and last_sample is not None:
@@ -348,6 +351,9 @@ def get_latest_sample(persist: bool = True) -> dict:
     _update_filter_health(sample)
     sample["filter_health_pct"] = round(filter_state["health_pct"], 1)
     sample["filter_status"] = filter_state["status"]
+    sample["esp32_url"] = ESP32_BASE_URL
+    if last_esp32_error:
+        sample["esp32_error"] = last_esp32_error
 
     history.append(sample)
     last_sample = sample
@@ -543,6 +549,19 @@ def api_predict():
     horizon = int(request.args.get("horizon", 12))
     horizon = max(3, min(horizon, 24))
     return jsonify({"points": _predict_aqi_points(horizon)})
+
+
+@app.route("/api/esp32-debug")
+@require_api_login
+def api_esp32_debug():
+    status = {
+        "esp32_url": ESP32_BASE_URL,
+        "configured": bool(ESP32_BASE_URL),
+        "last_source": state.get("source"),
+        "last_error": last_esp32_error,
+        "has_last_sample": last_sample is not None,
+    }
+    return jsonify(status)
 
 
 @app.route("/api/filter-health")

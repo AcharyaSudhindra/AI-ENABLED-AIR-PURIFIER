@@ -6,12 +6,13 @@
   <title>AirGuard Pro</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Clash+Display:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
+<body class="page-enter">
   <div class="bgfx"></div>
+  <div id="appToast" class="toast"></div>
   <div class="layout">
     <aside class="sidebar glass">
       <h2>AirGuard Pro</h2>
@@ -28,5 +29,6 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script src="/static/ui-animations.js?v=20260513a"></script>
 </body>
 </html>

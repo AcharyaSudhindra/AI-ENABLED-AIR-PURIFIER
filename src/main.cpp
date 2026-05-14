@@ -20,6 +20,7 @@ const char* WIFI_PASSWORD = "sudhindra2024@";
 WebServer server(80);
 
 float thresholdVoltage = 1.20f;
+int aqiFanThreshold = 175;
 bool autoMode = true;
 bool fanOn = false;
 
@@ -87,13 +88,14 @@ void setFan(bool on) {
 void updateControl(float voltage) {
   if (!autoMode) return;
 
-  // Hysteresis avoids rapid relay toggling around threshold.
-  float high = thresholdVoltage + 0.03f;
-  float low = thresholdVoltage - 0.03f;
+  // AQI-based auto control:
+  // fan OFF below 175 AQI, ON at/above 175 AQI (with small hysteresis).
+  int high = aqiFanThreshold;
+  int low = aqiFanThreshold - 5;
 
-  if (!fanOn && voltage >= high) {
+  if (!fanOn && latestAqi >= high) {
     setFan(true);
-  } else if (fanOn && voltage <= low) {
+  } else if (fanOn && latestAqi <= low) {
     setFan(false);
   }
 }

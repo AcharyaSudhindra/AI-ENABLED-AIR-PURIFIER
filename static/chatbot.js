@@ -33,6 +33,7 @@ async function ask(question) {
   append('user', m);
   input.value = '';
   typing(true);
+  btn.disabled = true;
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
@@ -45,6 +46,9 @@ async function ask(question) {
   } catch {
     typing(false);
     append('bot', 'Unable to reach assistant right now. Please try again.');
+  } finally {
+    btn.disabled = false;
+    input.focus();
   }
 }
 
