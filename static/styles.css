@@ -65,6 +65,7 @@ filter:saturate(120%);animation:bgShift 16s ease-in-out infinite alternate}
 .alerts{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .alerts li{padding:10px;border-radius:10px;border:1px solid var(--stroke);background:rgba(255,255,255,.08);animation:slideUp .35s ease both}
 .alerts .good{border-color:rgba(47,215,161,.55)}
+.alerts .good{border-color:rgba(47,215,161,.55)}
 .alerts .warn{border-color:rgba(242,178,79,.62)}
 .alerts .bad{border-color:rgba(255,122,98,.68)}
 .controls{display:grid;gap:9px}
@@ -78,6 +79,7 @@ button:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.24);fi
 .error{color:#ffb3a4}
 .chatbox{padding:14px}
 .quick-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.chip{width:auto;padding:8px 12px;border-radius:999px;background:rgba(242,178,79,.16);border:1px solid rgba(242,178,79,.4);font-size:.82rem;transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s ease}
 .chip{width:auto;padding:8px 12px;border-radius:999px;background:rgba(242,178,79,.16);border:1px solid rgba(242,178,79,.4);font-size:.82rem;transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s ease}
 .chip:hover{background:rgba(242,178,79,.24);transform:translateY(-1px)}
 .chat-log{height:430px;overflow:auto;display:grid;gap:8px;padding:10px;background:rgba(4,14,11,.35);border:1px solid rgba(255,255,255,.12);border-radius:14px}
