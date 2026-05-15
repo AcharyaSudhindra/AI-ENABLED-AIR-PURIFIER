@@ -121,12 +121,31 @@ async function refreshFilterHealth(){
 
 function renderAlerts(live){
   const box=q('alerts'); box.innerHTML='';
-  const offline = live.source === "esp32-offline";
+  const noData = Number(live.aqi || 0) === 0 && Number(live.pm25 || 0) === 0 && Number(live.voltage || 0) === 0;
+  const offline = live.source === "esp32-offline" && noData;
+  const stale = live.source === "esp32-stale";
   if (offline) {
     const li=document.createElement('li');
     li.className='bad';
-    li.textContent='ESP32 is offline or IP is not configured. Set ESP32_BASE_URL and reconnect Wi-Fi.';
+    li.textContent='ESP32 is offline or IP is not configured. Set ESP32_BASE_URL (or ESP32_IP) and reconnect Wi-Fi.';
     box.appendChild(li);
+    if (live.esp32_error) {
+      const err=document.createElement('li');
+      err.className='warn';
+      err.textContent=`Last error: ${live.esp32_error}`;
+      box.appendChild(err);
+    }
+  } else if (stale || live.source === "esp32-offline") {
+    const li=document.createElement('li');
+    li.className='warn';
+    li.textContent='Showing last saved sensor values (ESP32 temporarily unreachable).';
+    box.appendChild(li);
+    if (live.esp32_error) {
+      const err=document.createElement('li');
+      err.className='warn';
+      err.textContent=`Last error: ${live.esp32_error}`;
+      box.appendChild(err);
+    }
   } else {
     alerts(live).forEach(([cls,msg])=>{ const li=document.createElement('li'); li.className=cls; li.textContent=msg; box.appendChild(li);});
   }

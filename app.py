@@ -20,7 +20,21 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "0") == "1",
 )
 
-ESP32_BASE_URL = os.getenv("ESP32_BASE_URL", "").strip()
+def _resolve_esp32_base_url() -> str:
+    raw = (
+        os.getenv("ESP32_BASE_URL", "").strip()
+        or os.getenv("ESP32_URL", "").strip()
+        or os.getenv("ESP32_HOST", "").strip()
+        or os.getenv("ESP32_IP", "").strip()
+    )
+    if not raw:
+        return ""
+    if not raw.startswith(("http://", "https://")):
+        raw = f"http://{raw}"
+    return raw.rstrip("/")
+
+
+ESP32_BASE_URL = _resolve_esp32_base_url()
 REQUEST_TIMEOUT = 2.0
 
 DB_DIR = os.path.join(os.getcwd(), "data")
@@ -238,13 +252,26 @@ def _mock_sensor_payload() -> dict:
 
 
 def _read_esp32_payload() -> dict:
-    resp = requests.get(f"{ESP32_BASE_URL}/api/status", timeout=REQUEST_TIMEOUT)
-    resp.raise_for_status()
-    raw = resp.json()
+    last_err = None
+    raw = None
+    # Support both current and older firmware endpoint shapes.
+    for path in ("/api/status", "/status"):
+        try:
+            resp = requests.get(f"{ESP32_BASE_URL}{path}", timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            raw = resp.json()
+            break
+        except Exception as e:
+            last_err = e
+            continue
 
-    voltage = float(raw.get("voltage", 0.0))
-    adc = int(raw.get("adc", 0))
-    aqi = int(raw.get("aqi", _aqi_from_voltage(voltage)))
+    if raw is None:
+        raise RuntimeError(f"ESP32 status fetch failed: {last_err}")
+
+    # Accept common legacy key names used in older sensor payloads.
+    voltage = float(raw.get("voltage", raw.get("sensor_voltage", raw.get("mq135_voltage", 0.0))))
+    adc = int(raw.get("adc", raw.get("raw_adc", 0)))
+    aqi = int(raw.get("aqi", raw.get("aqi_index", _aqi_from_voltage(voltage))))
 
     with state_lock:
         if "mode" in raw:
@@ -262,7 +289,7 @@ def _read_esp32_payload() -> dict:
         "adc": adc,
         "voltage": round(voltage, 3),
         "aqi": aqi,
-        "pm25": round(float(raw.get("pm25", 0.0)), 1),
+        "pm25": round(float(raw.get("pm25", raw.get("pm_2_5", raw.get("pm", 0.0)))), 1),
         "aqi_label": _aqi_label(aqi),
         "fan_on": fan_on,
         "mode": mode,
@@ -303,6 +330,33 @@ def _persist_sample(sample: dict):
         ])
 
 
+def _load_last_persisted_sample() -> dict | None:
+    conn = _db_conn()
+    row = conn.execute(
+        """
+        SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage, source
+        FROM readings
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "adc": int(row["adc"]),
+        "voltage": float(row["voltage"]),
+        "aqi": int(row["aqi"]),
+        "pm25": round(max(0.0, float(row["aqi"]) / 2.1), 1),
+        "aqi_label": row["aqi_label"] or _aqi_label(int(row["aqi"])),
+        "fan_on": bool(row["fan_on"]),
+        "mode": row["mode"] or state["mode"],
+        "threshold_voltage": float(row["threshold_voltage"]),
+        "timestamp": row["ts"],
+        "source": row["source"] or "esp32",
+    }
+
+
 def get_latest_sample(persist: bool = True) -> dict:
     global last_sample, last_esp32_error
     try:
@@ -319,31 +373,41 @@ def get_latest_sample(persist: bool = True) -> dict:
             sample["source"] = "esp32-stale"
             sample["timestamp"] = _iso_now()
         elif ESP32_BASE_URL and last_sample is None:
-            sample = {
-                "adc": 0,
-                "voltage": 0.0,
-                "aqi": 0,
-                "pm25": 0.0,
-                "aqi_label": "No Data",
-                "fan_on": False,
-                "mode": state["mode"],
-                "threshold_voltage": state["threshold_voltage"],
-                "timestamp": _iso_now(),
-                "source": "esp32-offline",
-            }
+            fallback = _load_last_persisted_sample()
+            if fallback is not None:
+                sample = dict(fallback)
+                sample["source"] = "esp32-stale"
+            else:
+                sample = {
+                    "adc": 0,
+                    "voltage": 0.0,
+                    "aqi": 0,
+                    "pm25": 0.0,
+                    "aqi_label": "No Data",
+                    "fan_on": False,
+                    "mode": state["mode"],
+                    "threshold_voltage": state["threshold_voltage"],
+                    "timestamp": _iso_now(),
+                    "source": "esp32-offline",
+                }
         else:
-            sample = {
-                "adc": 0,
-                "voltage": 0.0,
-                "aqi": 0,
-                "pm25": 0.0,
-                "aqi_label": "No Data",
-                "fan_on": False,
-                "mode": state["mode"],
-                "threshold_voltage": state["threshold_voltage"],
-                "timestamp": _iso_now(),
-                "source": "esp32-offline",
-            }
+            fallback = _load_last_persisted_sample()
+            if fallback is not None:
+                sample = dict(fallback)
+                sample["source"] = "esp32-stale"
+            else:
+                sample = {
+                    "adc": 0,
+                    "voltage": 0.0,
+                    "aqi": 0,
+                    "pm25": 0.0,
+                    "aqi_label": "No Data",
+                    "fan_on": False,
+                    "mode": state["mode"],
+                    "threshold_voltage": state["threshold_voltage"],
+                    "timestamp": _iso_now(),
+                    "source": "esp32-offline",
+                }
 
     with state_lock:
         state["source"] = sample["source"]
