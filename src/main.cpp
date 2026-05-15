@@ -36,7 +36,10 @@ int latestAdc = 0;
 int latestAqi = 0;
 float latestPm25 = 0.0f;
 float pm25Filtered = 0.0f;
-float gp2yBaseVoltage = 0.58f; // tune 0.55-0.65 based on your board
+float gp2yBaseVoltage = 0.45f; // initial baseline; tune from serial debug output
+bool gp2yDebug = true;
+int lastGp2yRaw = 0;
+float lastGp2yVo = 0.0f;
 
 float readSmoothedVoltage() {
   int raw = analogRead(MQ135_PIN);
@@ -77,6 +80,8 @@ float readDustPM25Raw() {
   delayMicroseconds(9680);
 
   float vo = (raw / 4095.0f) * 3.3f;
+  lastGp2yRaw = raw;
+  lastGp2yVo = vo;
   float dust = (vo - gp2yBaseVoltage) / 0.005f; // ug/m3 approximation
   if (dust < 0.0f) dust = 0.0f;
   return dust;
@@ -102,8 +107,8 @@ float readDustPM25Stable() {
   const float alpha = 0.18f;
   pm25Filtered = (pm25Filtered * (1.0f - alpha)) + (mean * alpha);
 
-  // Noise floor clamp.
-  if (pm25Filtered < 1.0f) pm25Filtered = 0.0f;
+  // Keep tiny values visible for calibration instead of clamping to zero.
+  if (pm25Filtered < 0.1f) pm25Filtered = 0.0f;
   return pm25Filtered;
 }
 
@@ -288,7 +293,17 @@ void loop() {
   Serial.print(" V | Fan: ");
   Serial.print(fanOn ? "ON" : "OFF");
   Serial.print(" | PM2.5: ");
-  Serial.println(latestPm25, 1);
+  Serial.print(latestPm25, 1);
+  if (gp2yDebug) {
+    Serial.print(" | GP2Y raw: ");
+    Serial.print(lastGp2yRaw);
+    Serial.print(" | VO: ");
+    Serial.print(lastGp2yVo, 3);
+    Serial.print("V | base: ");
+    Serial.print(gp2yBaseVoltage, 3);
+    Serial.print("V");
+  }
+  Serial.println();
 
   if (millis() - lastDisplayMs > 1000) {
     drawOLED(voltage);
