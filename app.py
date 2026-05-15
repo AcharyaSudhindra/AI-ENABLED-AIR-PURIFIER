@@ -8,9 +8,11 @@ import math
 import os
 import random
 import requests
+import smtplib
 import sqlite3
 import threading
 import time
+from email.message import EmailMessage
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "change-this-secret-in-production")
@@ -49,6 +51,18 @@ ADMIN_PASS = os.getenv("AIRGUARD_ADMIN_PASS", "admin123")
 VIEWER_USER = os.getenv("AIRGUARD_VIEWER_USER", "viewer")
 VIEWER_PASS = os.getenv("AIRGUARD_VIEWER_PASS", "viewer123")
 
+SMTP_HOST = os.getenv("AIRGUARD_SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("AIRGUARD_SMTP_PORT", "587"))
+SMTP_USER = os.getenv("AIRGUARD_SMTP_USER", "").strip()
+SMTP_PASS = os.getenv("AIRGUARD_SMTP_PASS", "")
+SMTP_FROM = os.getenv("AIRGUARD_SMTP_FROM", SMTP_USER or "airguard@localhost").strip()
+SMTP_USE_TLS = os.getenv("AIRGUARD_SMTP_USE_TLS", "1").strip() != "0"
+ALERT_EMAIL_TO = os.getenv("AIRGUARD_ALERT_EMAIL_TO", "sudhindramacharya@gmail.com").strip()
+ALERT_AQI_THRESHOLD = max(50, min(500, int(os.getenv("AIRGUARD_ALERT_AQI_THRESHOLD", "150"))))
+ALERT_AQI_HYSTERESIS = max(5, min(50, int(os.getenv("AIRGUARD_ALERT_AQI_HYSTERESIS", "10"))))
+ALERT_COOLDOWN_SEC = max(60, int(os.getenv("AIRGUARD_ALERT_COOLDOWN_SEC", "1800")))
+OFFLINE_ALERT_COOLDOWN_SEC = max(60, int(os.getenv("AIRGUARD_OFFLINE_ALERT_COOLDOWN_SEC", "1800")))
+
 state_lock = threading.Lock()
 state = {
     "mode": "auto",
@@ -70,6 +84,18 @@ history = deque(maxlen=800)
 last_sample = None
 stop_event = threading.Event()
 last_esp32_error = ""
+notification_state = {
+    "email_to": ALERT_EMAIL_TO,
+    "aqi_threshold": ALERT_AQI_THRESHOLD,
+    "enabled": bool(ALERT_EMAIL_TO and SMTP_HOST and SMTP_FROM),
+    "last_error": "",
+    "last_sent_at": "",
+    "last_event": "",
+    "last_offline_alert_ts": 0.0,
+    "last_aqi_alert_ts": 0.0,
+    "offline_latched": False,
+    "aqi_latched": False,
+}
 
 
 def _db_conn():
@@ -423,6 +449,8 @@ def get_latest_sample(persist: bool = True) -> dict:
     last_sample = sample
     if persist and sample.get("source") not in {"esp32-stale", "esp32-offline"}:
         _persist_sample(sample)
+    if persist:
+        _maybe_send_notifications(sample)
     return sample
 
 
@@ -478,6 +506,230 @@ def _latest_stats():
     ).fetchone()
     conn.close()
     return dict(row)
+
+
+def _coerce_range(range_key: str) -> tuple[str, str]:
+    key = (range_key or "24h").strip().lower()
+    mapping = {
+        "1h": "-1 hour",
+        "24h": "-1 day",
+        "7d": "-7 day",
+    }
+    if key not in mapping:
+        key = "24h"
+    return key, mapping[key]
+
+
+def _history_for_range(range_key: str, max_points: int = 500) -> dict:
+    max_points = max(30, min(max_points, 3000))
+    key, sqlite_window = _coerce_range(range_key)
+
+    conn = _db_conn()
+    rows = conn.execute(
+        """
+        SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage, source
+        FROM readings
+        WHERE replace(ts, 'T', ' ') >= datetime('now', ?)
+        ORDER BY ts ASC
+        """,
+        (sqlite_window,),
+    ).fetchall()
+
+    stats_row = conn.execute(
+        """
+        SELECT COUNT(*) samples,
+               MIN(aqi) min_aqi,
+               MAX(aqi) max_aqi,
+               AVG(aqi) avg_aqi,
+               MIN(voltage) min_voltage,
+               MAX(voltage) max_voltage,
+               AVG(voltage) avg_voltage
+        FROM readings
+        WHERE replace(ts, 'T', ' ') >= datetime('now', ?)
+        """,
+        (sqlite_window,),
+    ).fetchone()
+    conn.close()
+
+    points = []
+    for row in rows:
+        point = dict(row)
+        point["aqi"] = int(point["aqi"])
+        point["voltage"] = float(point["voltage"])
+        point["fan_on"] = bool(point["fan_on"])
+        point["pm25"] = round(max(0.0, point["aqi"] / 2.1), 1)
+        points.append(point)
+
+    if len(points) > max_points:
+        stride = max(1, len(points) // max_points)
+        points = points[::stride]
+        if points and points[-1]["ts"] != rows[-1]["ts"]:
+            point = dict(rows[-1])
+            point["aqi"] = int(point["aqi"])
+            point["voltage"] = float(point["voltage"])
+            point["fan_on"] = bool(point["fan_on"])
+            point["pm25"] = round(max(0.0, point["aqi"] / 2.1), 1)
+            points.append(point)
+
+    stats = dict(stats_row or {})
+    samples = int(stats.get("samples") or 0)
+    avg_aqi = float(stats.get("avg_aqi") or 0.0)
+    min_aqi = int(stats.get("min_aqi") or 0)
+    max_aqi = int(stats.get("max_aqi") or 0)
+    avg_voltage = float(stats.get("avg_voltage") or 0.0)
+    min_voltage = float(stats.get("min_voltage") or 0.0)
+    max_voltage = float(stats.get("max_voltage") or 0.0)
+
+    return {
+        "range": key,
+        "points": points,
+        "stats": {
+            "samples": samples,
+            "avg_aqi": round(avg_aqi, 1) if samples else 0.0,
+            "min_aqi": min_aqi if samples else 0,
+            "max_aqi": max_aqi if samples else 0,
+            "avg_pm25": round(max(0.0, avg_aqi / 2.1), 1) if samples else 0.0,
+            "avg_voltage": round(avg_voltage, 3) if samples else 0.0,
+            "min_voltage": round(min_voltage, 3) if samples else 0.0,
+            "max_voltage": round(max_voltage, 3) if samples else 0.0,
+        },
+    }
+
+
+def _smtp_ready() -> tuple[bool, str]:
+    if not notification_state.get("enabled"):
+        return False, "Email alerts are disabled."
+    if not SMTP_HOST:
+        return False, "AIRGUARD_SMTP_HOST is not configured."
+    if not notification_state.get("email_to"):
+        return False, "Recipient email is not configured."
+    if not SMTP_FROM:
+        return False, "Sender email is not configured."
+    return True, ""
+
+
+def _send_email_alert(subject: str, body: str) -> bool:
+    ok, reason = _smtp_ready()
+    if not ok:
+        notification_state["last_error"] = reason
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = SMTP_FROM
+    msg["To"] = notification_state["email_to"]
+    msg.set_content(body)
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+            smtp.ehlo()
+            if SMTP_USE_TLS:
+                smtp.starttls()
+                smtp.ehlo()
+            if SMTP_USER:
+                smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
+        notification_state["last_error"] = ""
+        return True
+    except Exception as e:
+        notification_state["last_error"] = str(e)
+        return False
+
+
+def _mark_alert_attempt(event: str, ts_now: float, field_name: str) -> None:
+    notification_state[field_name] = ts_now
+    notification_state["last_event"] = event
+    if notification_state["last_error"] == "":
+        notification_state["last_sent_at"] = _iso_now()
+
+
+def _try_send_event_alert(event: str, subject: str, body: str, ts_now: float, field_name: str) -> None:
+    _send_email_alert(subject, body)
+    _mark_alert_attempt(event, ts_now, field_name)
+
+
+def _notification_status_payload() -> dict:
+    ready, reason = _smtp_ready()
+    return {
+        "enabled": bool(notification_state.get("enabled")),
+        "ready": ready,
+        "reason": reason,
+        "email_to": notification_state.get("email_to"),
+        "aqi_threshold": int(notification_state.get("aqi_threshold", ALERT_AQI_THRESHOLD)),
+        "last_event": notification_state.get("last_event", ""),
+        "last_sent_at": notification_state.get("last_sent_at", ""),
+        "last_error": notification_state.get("last_error", ""),
+    }
+
+
+def _maybe_send_notifications(sample: dict) -> None:
+    if not notification_state.get("enabled"):
+        return
+
+    ts_now = time.time()
+    source = str(sample.get("source", ""))
+    is_offline = source in {"esp32-offline", "esp32-stale"}
+    aqi = int(sample.get("aqi", 0))
+    threshold = int(notification_state.get("aqi_threshold", ALERT_AQI_THRESHOLD))
+    recovery_threshold = max(0, threshold - ALERT_AQI_HYSTERESIS)
+
+    if is_offline:
+        if (
+            not notification_state.get("offline_latched")
+            and ts_now - float(notification_state.get("last_offline_alert_ts", 0.0)) >= OFFLINE_ALERT_COOLDOWN_SEC
+        ):
+            err = sample.get("esp32_error") or last_esp32_error or "Unknown connection issue"
+            subject = "AirGuard Alert: ESP32 appears offline"
+            body = (
+                "AirGuard could not reach your ESP32 sensor.\n\n"
+                f"Time: {_iso_now()}\n"
+                f"Source State: {source}\n"
+                f"Last Error: {err}\n"
+                f"Dashboard URL: http://127.0.0.1:5000/dashboard\n"
+            )
+            _try_send_event_alert("esp32_offline", subject, body, ts_now, "last_offline_alert_ts")
+            notification_state["offline_latched"] = True
+        return
+
+    if notification_state.get("offline_latched"):
+        subject = "AirGuard Recovery: ESP32 is reachable again"
+        body = (
+            "Your ESP32 feed is live again.\n\n"
+            f"Time: {_iso_now()}\n"
+            f"AQI: {aqi}\n"
+            f"Mode: {sample.get('mode', 'auto')}\n"
+            f"Fan: {'ON' if sample.get('fan_on') else 'OFF'}\n"
+        )
+        _try_send_event_alert("esp32_recovered", subject, body, ts_now, "last_offline_alert_ts")
+        notification_state["offline_latched"] = False
+
+    if aqi >= threshold:
+        if (
+            not notification_state.get("aqi_latched")
+            and ts_now - float(notification_state.get("last_aqi_alert_ts", 0.0)) >= ALERT_COOLDOWN_SEC
+        ):
+            subject = f"AirGuard Alert: AQI reached {aqi}"
+            body = (
+                "Air quality crossed your configured alert threshold.\n\n"
+                f"Time: {_iso_now()}\n"
+                f"AQI: {aqi} ({sample.get('aqi_label', 'Unknown')})\n"
+                f"PM2.5: {sample.get('pm25', 0)} ug/m3\n"
+                f"Voltage: {sample.get('voltage', 0)} V\n"
+                f"Threshold: {threshold}\n"
+                f"Fan: {'ON' if sample.get('fan_on') else 'OFF'}\n"
+            )
+            _try_send_event_alert("aqi_high", subject, body, ts_now, "last_aqi_alert_ts")
+            notification_state["aqi_latched"] = True
+    elif aqi <= recovery_threshold and notification_state.get("aqi_latched"):
+        subject = f"AirGuard Recovery: AQI back below {recovery_threshold}"
+        body = (
+            "AQI has dropped back into a safer range.\n\n"
+            f"Time: {_iso_now()}\n"
+            f"Current AQI: {aqi} ({sample.get('aqi_label', 'Unknown')})\n"
+            f"Recovery Threshold: {recovery_threshold}\n"
+        )
+        _try_send_event_alert("aqi_recovered", subject, body, ts_now, "last_aqi_alert_ts")
+        notification_state["aqi_latched"] = False
 
 
 def _chatbot_answer(msg: str) -> str:
@@ -677,6 +929,65 @@ def api_history():
     points = int(request.args.get("points", 60))
     points = max(10, min(points, 600))
     return jsonify(list(history)[-points:])
+
+
+@app.route("/api/reports/history")
+@require_api_login
+def api_reports_history():
+    range_key = request.args.get("range", "24h")
+    max_points = int(request.args.get("max_points", 500))
+    return jsonify(_history_for_range(range_key, max_points=max_points))
+
+
+@app.route("/api/notifications/status")
+@require_api_login
+def api_notifications_status():
+    return jsonify(_notification_status_payload())
+
+
+@app.route("/api/notifications/config", methods=["POST"])
+@require_api_login
+@require_admin_api
+def api_notifications_config():
+    payload = request.get_json(silent=True) or {}
+
+    if "enabled" in payload:
+        notification_state["enabled"] = bool(payload.get("enabled"))
+
+    if "email_to" in payload:
+        notification_state["email_to"] = str(payload.get("email_to") or "").strip()
+
+    if "aqi_threshold" in payload:
+        threshold = int(payload.get("aqi_threshold") or ALERT_AQI_THRESHOLD)
+        notification_state["aqi_threshold"] = max(50, min(500, threshold))
+
+    return jsonify(_notification_status_payload())
+
+
+@app.route("/api/notifications/test", methods=["POST"])
+@require_api_login
+@require_admin_api
+def api_notifications_test():
+    payload = request.get_json(silent=True) or {}
+    if "email_to" in payload:
+        notification_state["email_to"] = str(payload.get("email_to") or "").strip()
+
+    sample = last_sample or get_latest_sample(persist=False)
+    subject = "AirGuard Test Alert: Email notifications are configured"
+    body = (
+        "This is a test email from AirGuard.\n\n"
+        f"Time: {_iso_now()}\n"
+        f"AQI: {sample.get('aqi', 0)} ({sample.get('aqi_label', 'Unknown')})\n"
+        f"PM2.5: {sample.get('pm25', 0)} ug/m3\n"
+        f"Source: {sample.get('source', 'unknown')}\n"
+        f"Dashboard URL: http://127.0.0.1:5000/dashboard\n"
+    )
+    ok = _send_email_alert(subject, body)
+    notification_state["last_event"] = "test_alert"
+    if ok:
+        notification_state["last_sent_at"] = _iso_now()
+        return jsonify({"ok": True, "status": _notification_status_payload()})
+    return jsonify({"ok": False, "status": _notification_status_payload()}), 500
 
 
 @app.route("/api/settings", methods=["GET", "POST"])

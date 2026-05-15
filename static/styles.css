@@ -82,6 +82,7 @@ button:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.24);fi
 .chip{width:auto;padding:8px 12px;border-radius:999px;background:rgba(242,178,79,.16);border:1px solid rgba(242,178,79,.4);font-size:.82rem;transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s ease}
 .chip{width:auto;padding:8px 12px;border-radius:999px;background:rgba(242,178,79,.16);border:1px solid rgba(242,178,79,.4);font-size:.82rem;transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s ease}
 .chip:hover{background:rgba(242,178,79,.24);transform:translateY(-1px)}
+.range-chip.active{background:rgba(47,215,161,.26);border-color:rgba(47,215,161,.6)}
 .chat-log{height:430px;overflow:auto;display:grid;gap:8px;padding:10px;background:rgba(4,14,11,.35);border:1px solid rgba(255,255,255,.12);border-radius:14px}
 .msg{padding:10px 12px;border-radius:12px;max-width:82%;line-height:1.45;animation:chatIn .28s ease both}
 .msg.user{margin-left:auto;background:rgba(47,215,161,.24);border:1px solid rgba(47,215,161,.4)}

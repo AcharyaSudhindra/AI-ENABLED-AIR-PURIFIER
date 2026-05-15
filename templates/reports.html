@@ -1,13 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="glass hero"><h1>Daily AQI Reports</h1><p>Persistent analytics from SQLite + CSV logger.</p></section>
+<section class="glass hero"><h1>Historical Analytics + Alerts</h1><p>Range-based AQI charts, summary stats, and email notification health.</p></section>
 <section class="cards">
-  <article class="glass card"><h3>24h Avg AQI</h3><p id="avgAqi">--</p></article>
-  <article class="glass card"><h3>24h Peak AQI</h3><p id="peakAqi">--</p></article>
-  <article class="glass card"><h3>24h Avg Voltage</h3><p id="avgVolt">--</p></article>
-  <article class="glass card"><h3>Total Samples</h3><p id="samples">--</p></article>
+  <article class="glass card"><h3>Avg AQI</h3><p id="avgAqi">--</p></article>
+  <article class="glass card"><h3>Min AQI</h3><p id="minAqi">--</p></article>
+  <article class="glass card"><h3>Max AQI</h3><p id="maxAqi">--</p></article>
+  <article class="glass card"><h3>Samples</h3><p id="samples">--</p></article>
 </section>
-<section class="glass panel"><h2>Daily Breakdown (7 Days)</h2><canvas id="dailyChart" height="120"></canvas></section>
+<section class="glass panel">
+  <h2>Historical Trend</h2>
+  <div class="quick-row">
+    <button class="chip range-chip" data-range="1h">1h</button>
+    <button class="chip range-chip" data-range="24h">24h</button>
+    <button class="chip range-chip" data-range="7d">7d</button>
+  </div>
+  <canvas id="historyChart" height="120"></canvas>
+  <p class="mini" id="rangeMeta">--</p>
+</section>
 <section class="glass panel"><h2>Tabular Report</h2><div id="dailyTable"></div></section>
+<section class="glass panel">
+  <h2>Email Notifications</h2>
+  <div class="controls">
+    <label>Recipient Email</label>
+    <input id="notifyEmail" type="email" placeholder="name@example.com">
+    <label>AQI Alert Threshold</label>
+    <input id="notifyThreshold" type="number" min="50" max="500" step="1">
+    <div class="btns">
+      <button id="saveNotifyBtn" class="secondary">Save Notification Settings</button>
+      <button id="testNotifyBtn">Send Test Email</button>
+    </div>
+    <p class="mini" id="notifyState">--</p>
+  </div>
+</section>
+<script>window.USER_ROLE = "{{ role }}";</script>
 <script src="/static/reports.js"></script>
 {% endblock %}
