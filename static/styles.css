@@ -39,6 +39,7 @@ filter:saturate(120%);animation:bgShift 16s ease-in-out infinite alternate}
 .sidebar nav{display:grid;gap:9px;margin-top:16px}
 .sidebar a{text-decoration:none;color:var(--text);padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);transition:transform .22s cubic-bezier(.2,.8,.2,1),background .22s ease,box-shadow .22s ease}
 .sidebar a:hover{transform:translateY(-1px);background:rgba(255,255,255,.14);box-shadow:0 8px 16px rgba(0,0,0,.2)}
+.sidebar a.active{background:linear-gradient(120deg, rgba(47,215,161,.22), rgba(242,178,79,.18));border-color:rgba(47,215,161,.45);box-shadow:0 10px 20px rgba(0,0,0,.24)}
 .hero{padding:20px;background:linear-gradient(135deg,rgba(47,215,161,.22),rgba(242,178,79,.16))}
 .hero h1{margin:0 0 7px;font-size:clamp(1.3rem,2.4vw,1.9rem)}
 .hero h1,.sidebar h2,.panel h2{font-family:'Clash Display','Space Grotesk',sans-serif;letter-spacing:.01em}
@@ -47,6 +48,8 @@ filter:saturate(120%);animation:bgShift 16s ease-in-out infinite alternate}
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .card{padding:15px;transition:transform .24s cubic-bezier(.2,.8,.2,1),box-shadow .24s ease}
 .card:hover{transform:translateY(-2px);box-shadow:0 12px 22px rgba(0,0,0,.24)}
+.card::after,.panel::after{content:"";position:absolute;inset:-120% -30% auto;pointer-events:none;height:56%;background:linear-gradient(105deg,transparent 20%,rgba(255,255,255,.08) 48%,transparent 74%);transform:translateX(-120%) rotate(8deg)}
+.card:hover::after,.panel:hover::after{animation:glassSweep .9s ease}
 .card h3{margin:0;color:var(--muted);font-size:.85rem;letter-spacing:.03em}
 .card p{margin:10px 0 4px;font-size:2rem;font-weight:700;transition:transform .2s ease}
 .card p{font-family:'Clash Display','Space Grotesk',sans-serif;letter-spacing:.02em}
@@ -94,6 +97,8 @@ button:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.24);fi
 .toast.show{opacity:1;transform:translateY(0)}
 table{width:100%;border-collapse:collapse}
 th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.18);text-align:left;font-size:.9rem}
+.scroll-reveal{opacity:0;transform:translateY(10px);transition:opacity .45s ease,transform .45s ease}
+.scroll-reveal.in-view{opacity:1;transform:translateY(0)}
 @keyframes bgShift{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(0,-8px,0)}}
 @keyframes floatA{0%,100%{transform:translateY(0)}50%{transform:translateY(-16px)}}
 @keyframes floatB{0%,100%{transform:translateY(0)}50%{transform:translateY(18px)}}
@@ -103,5 +108,6 @@ th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.18);text-align:left;
 @keyframes chatIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes typingPulse{0%,100%{opacity:.45}50%{opacity:1}}
 @keyframes fanSpin{to{transform:rotate(360deg)}}
+@keyframes glassSweep{from{transform:translateX(-120%) rotate(8deg)}to{transform:translateX(140%) rotate(8deg)}}
 @media(max-width:980px){.layout{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.cards{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
