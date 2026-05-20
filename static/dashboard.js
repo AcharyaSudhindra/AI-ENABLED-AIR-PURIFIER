@@ -63,12 +63,18 @@ function renderLive(live){
   const offline = live.source === "esp32-offline";
   const aqiEl = q('aqi');
   const pmEl = q('pm25');
+  const tempEl = q('temp');
+  const humEl = q('hum');
   if (noData){
     if (aqiEl) aqiEl.textContent = '--';
     if (pmEl) pmEl.textContent = '--';
+    if (tempEl) tempEl.textContent = '--';
+    if (humEl) humEl.textContent = '--';
   } else {
     animateNumber(aqiEl, Number(live.aqi || 0));
     animateNumber(pmEl, Number(live.pm25 || 0));
+    animateNumber(tempEl, Number(live.temperature_c || 0));
+    animateNumber(humEl, Number(live.humidity || 0));
     setRing('aqiRing', (Number(live.aqi||0)/500)*100);
   }
 
@@ -85,6 +91,8 @@ function renderLive(live){
 
   pulseValue('aqi', live.aqi);
   pulseValue('pm25', live.pm25);
+  pulseValue('temp', live.temperature_c);
+  pulseValue('hum', live.humidity);
   pulseValue('fan', live.fan_on);
   pulseValue('source', live.source);
 }

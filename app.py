@@ -15,6 +15,27 @@ import time
 from email.message import EmailMessage
 
 app = Flask(__name__)
+
+
+def _load_dotenv(dotenv_path: str = ".env") -> None:
+    if not os.path.exists(dotenv_path):
+        return
+    try:
+        with open(dotenv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#") or "=" not in s:
+                    continue
+                key, val = s.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+    except Exception:
+        pass
+
+
+_load_dotenv()
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "change-this-secret-in-production")
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -268,6 +289,8 @@ def _mock_sensor_payload() -> dict:
         "voltage": round(voltage, 3),
         "aqi": aqi,
         "pm25": round(max(0.0, aqi / 2.1), 1),
+        "temperature_c": round(26.0 + random.uniform(-1.2, 1.2), 1),
+        "humidity": round(52.0 + random.uniform(-6.0, 6.0), 1),
         "aqi_label": _aqi_label(aqi),
         "fan_on": fan_on,
         "mode": mode,
@@ -316,6 +339,8 @@ def _read_esp32_payload() -> dict:
         "voltage": round(voltage, 3),
         "aqi": aqi,
         "pm25": round(float(raw.get("pm25", raw.get("pm_2_5", raw.get("pm", 0.0)))), 1),
+        "temperature_c": round(float(raw.get("temperature_c", raw.get("temp_c", raw.get("temperature", 0.0)))), 1),
+        "humidity": round(float(raw.get("humidity", raw.get("rh", 0.0))), 1),
         "aqi_label": _aqi_label(aqi),
         "fan_on": fan_on,
         "mode": mode,
@@ -374,6 +399,8 @@ def _load_last_persisted_sample() -> dict | None:
         "voltage": float(row["voltage"]),
         "aqi": int(row["aqi"]),
         "pm25": round(max(0.0, float(row["aqi"]) / 2.1), 1),
+        "temperature_c": 0.0,
+        "humidity": 0.0,
         "aqi_label": row["aqi_label"] or _aqi_label(int(row["aqi"])),
         "fan_on": bool(row["fan_on"]),
         "mode": row["mode"] or state["mode"],
@@ -409,6 +436,8 @@ def get_latest_sample(persist: bool = True) -> dict:
                     "voltage": 0.0,
                     "aqi": 0,
                     "pm25": 0.0,
+                    "temperature_c": 0.0,
+                    "humidity": 0.0,
                     "aqi_label": "No Data",
                     "fan_on": False,
                     "mode": state["mode"],
@@ -427,6 +456,8 @@ def get_latest_sample(persist: bool = True) -> dict:
                     "voltage": 0.0,
                     "aqi": 0,
                     "pm25": 0.0,
+                    "temperature_c": 0.0,
+                    "humidity": 0.0,
                     "aqi_label": "No Data",
                     "fan_on": False,
                     "mode": state["mode"],
