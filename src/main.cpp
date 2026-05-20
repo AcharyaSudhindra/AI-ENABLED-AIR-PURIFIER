@@ -165,7 +165,7 @@ void updateControl(float voltage) {
 }
 
 void handleStatus() {
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   doc["adc"] = latestAdc;
   doc["voltage"] = latestVoltage;
   doc["aqi"] = latestAqi;
@@ -189,27 +189,27 @@ void handleControl() {
     return;
   }
 
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) {
     server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
     return;
   }
 
-  if (doc.containsKey("mode")) {
+  if (doc["mode"].is<const char*>()) {
     String mode = doc["mode"].as<String>();
     mode.toLowerCase();
     autoMode = (mode == "auto");
   }
 
-  if (doc.containsKey("threshold_voltage")) {
+  if (doc["threshold_voltage"].is<float>() || doc["threshold_voltage"].is<int>()) {
     float t = doc["threshold_voltage"].as<float>();
     if (t >= 0.2f && t <= 3.0f) {
       thresholdVoltage = t;
     }
   }
 
-  if (doc.containsKey("fan_on") && !autoMode) {
+  if ((doc["fan_on"].is<bool>() || doc["fan_on"].is<int>()) && !autoMode) {
     bool requested = doc["fan_on"].as<bool>();
     setFan(requested);
   }
