@@ -60,4 +60,34 @@
       requestAnimationFrame(frame);
     });
   }
+
+  if (!prefersReducedMotion) {
+    const depthEls = document.querySelectorAll('.card, .panel, .sidebar');
+    const damp = 18;
+    depthEls.forEach((el) => {
+      el.addEventListener('mousemove', (e) => {
+        const r = el.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        const rx = (-y * damp).toFixed(2);
+        const ry = (x * damp).toFixed(2);
+        el.style.transform = `perspective(1000px) rotateX(${rx}deg) rotateY(${ry}deg) translateY(-2px)`;
+      });
+      el.addEventListener('mouseleave', () => {
+        el.style.transform = '';
+      });
+    });
+
+    const bgfx = document.querySelector('.bgfx');
+    const orbs = Array.from(document.querySelectorAll('.bg-orb'));
+    window.addEventListener('mousemove', (e) => {
+      const x = (e.clientX / window.innerWidth - 0.5) * 2;
+      const y = (e.clientY / window.innerHeight - 0.5) * 2;
+      if (bgfx) bgfx.style.transform = `translate3d(${(-x * 6).toFixed(2)}px, ${(-y * 6).toFixed(2)}px, 0)`;
+      orbs.forEach((orb, i) => {
+        const m = (i + 1) * 10;
+        orb.style.transform = `translate3d(${(x * m).toFixed(2)}px, ${(y * m).toFixed(2)}px, 0)`;
+      });
+    }, { passive: true });
+  }
 })();
