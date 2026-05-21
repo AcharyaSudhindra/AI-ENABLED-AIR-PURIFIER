@@ -1,5 +1,10 @@
 (function(){
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const sceneTransition = document.getElementById('sceneTransition');
+  if (!prefersReducedMotion && sceneTransition) {
+    document.body.classList.add('scene-enter');
+    setTimeout(() => document.body.classList.remove('scene-enter'), 420);
+  }
   const links = document.querySelectorAll('a[href^="/"]');
   links.forEach((a) => {
     a.addEventListener('click', (e) => {
@@ -7,7 +12,8 @@
       if (!href || href === location.pathname || a.target === '_blank') return;
       e.preventDefault();
       document.body.classList.add('page-leave');
-      setTimeout(() => { window.location.href = href; }, 180);
+      if (!prefersReducedMotion && sceneTransition) document.body.classList.add('scene-leave');
+      setTimeout(() => { window.location.href = href; }, prefersReducedMotion ? 180 : 420);
     });
   });
 
@@ -61,9 +67,9 @@
     });
   }
 
-  if (!prefersReducedMotion) {
-    const depthEls = document.querySelectorAll('.card, .panel, .sidebar');
-    const damp = 18;
+  if (!prefersReducedMotion && window.innerWidth > 1024) {
+    const depthEls = document.querySelectorAll('.card, .panel');
+    const damp = 8;
     depthEls.forEach((el) => {
       el.addEventListener('mousemove', (e) => {
         const r = el.getBoundingClientRect();
