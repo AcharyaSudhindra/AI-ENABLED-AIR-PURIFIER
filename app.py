@@ -545,6 +545,7 @@ def _coerce_range(range_key: str) -> tuple[str, str]:
         "1h": "-1 hour",
         "24h": "-1 day",
         "7d": "-7 day",
+        "1m": "-30 day",
     }
     if key not in mapping:
         key = "24h"
