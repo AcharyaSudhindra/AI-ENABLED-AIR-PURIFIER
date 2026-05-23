@@ -115,7 +115,16 @@ function renderLive(live){
   }
 
   q('aqiLabel').textContent = noData ? "Waiting for ESP32" : live.aqi_label;
-  q('fan').textContent = noData ? "--" : (live.fan_on ? "ON" : "OFF");
+  const fanBadge = q('fanStatus');
+  if (fanBadge) {
+    if (noData) {
+      fanBadge.textContent = "--";
+      fanBadge.className = "fan-badge skeleton";
+    } else {
+      fanBadge.textContent = live.fan_on ? "ON" : "OFF";
+      fanBadge.className = `fan-badge ${live.fan_on ? 'fan-on' : 'fan-off'}`;
+    }
+  }
   q('mode').textContent = noData ? "Mode --" : `Mode ${live.mode.toUpperCase()}`;
   q('source').textContent = live.source === "esp32-stale" ? "esp32 (stale)" : live.source;
   q('time').textContent=live.timestamp;
@@ -129,7 +138,7 @@ function renderLive(live){
   pulseValue('pm25', live.pm25);
   pulseValue('temp', live.temperature_c);
   pulseValue('hum', live.humidity);
-  pulseValue('fan', live.fan_on);
+  pulseValue('fanStatus', live.fan_on);
   pulseValue('source', live.source);
 }
 

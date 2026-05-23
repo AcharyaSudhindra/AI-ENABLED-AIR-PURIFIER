@@ -72,9 +72,12 @@ filter:saturate(120%);animation:bgShift 16s ease-in-out infinite alternate;z-ind
 .card p{font-family:'Clash Display','Space Grotesk',sans-serif;letter-spacing:.02em}
 .card.live-pulse p{animation:valuePulse .4s ease}
 .heartbeat{animation:heartbeat 1.1s ease}
-#fanWrap{display:flex;align-items:center;gap:8px}
-.fan-icon{display:inline-block;transform-origin:center;opacity:.8}
+#fanWrap{display:flex;align-items:center;gap:10px}
+.fan-icon{display:inline-block;transform-origin:center;opacity:.8;font-size:1.6rem}
 .fan-icon.spin{animation:fanSpin 1s linear infinite;opacity:1}
+.fan-badge{display:inline-block;padding:4px 14px;border-radius:999px;font-size:.9rem;font-weight:700;letter-spacing:.05em;transition:background .4s ease,color .4s ease,box-shadow .4s ease}
+.fan-badge.fan-on{background:rgba(47,215,161,.22);color:#2fd7a1;border:1px solid rgba(47,215,161,.5);box-shadow:0 0 12px rgba(47,215,161,.3)}
+.fan-badge.fan-off{background:rgba(255,122,98,.15);color:#ff7a62;border:1px solid rgba(255,122,98,.4);box-shadow:0 0 12px rgba(255,122,98,.2)}
 .ring{--pct:0%;width:88px;height:88px;border-radius:50%;display:grid;place-items:center;margin:8px 0;background:conic-gradient(var(--a) var(--pct), rgba(255,255,255,.12) 0);position:relative}
 .ring::before{content:"";position:absolute;inset:7px;border-radius:50%;background:rgba(8,24,19,.78);border:1px solid rgba(255,255,255,.16)}
 .ring span{position:relative;z-index:1;font-weight:700}
