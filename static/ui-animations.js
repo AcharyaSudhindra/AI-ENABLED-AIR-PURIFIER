@@ -59,5 +59,25 @@
     });
   }
 
-  // Stability mode: no pointer-driven transforms/parallax.
+  if (!prefersReducedMotion) {
+    document.querySelectorAll('.card').forEach(el => {
+      el.addEventListener('mouseenter', () => {
+        el.style.transition = 'transform 0.1s ease-out, box-shadow 0.3s ease, background 0.3s ease';
+      });
+      el.addEventListener('mousemove', e => {
+        const rect = el.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const tiltX = ((y - centerY) / centerY) * -5;
+        const tiltY = ((x - centerX) / centerX) * 5;
+        el.style.transform = `perspective(1000px) scale(1.02) translateY(-4px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+      });
+      el.addEventListener('mouseleave', () => {
+        el.style.transition = '';
+        el.style.transform = '';
+      });
+    });
+  }
 })();
