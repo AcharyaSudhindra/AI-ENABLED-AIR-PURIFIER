@@ -60,7 +60,7 @@
   }
 
   if (!prefersReducedMotion) {
-    document.querySelectorAll('.card').forEach(el => {
+    document.querySelectorAll('.card, .glass.panel').forEach(el => {
       el.addEventListener('mouseenter', () => {
         el.style.transition = 'transform 0.1s ease-out, box-shadow 0.3s ease, background 0.3s ease';
       });
@@ -70,14 +70,33 @@
         const y = e.clientY - rect.top;
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
-        const tiltX = ((y - centerY) / centerY) * -5;
-        const tiltY = ((x - centerX) / centerX) * 5;
+        const maxTilt = el.classList.contains('panel') ? 2.5 : 5;
+        const tiltX = ((y - centerY) / centerY) * -maxTilt;
+        const tiltY = ((x - centerX) / centerX) * maxTilt;
         el.style.transform = `perspective(1000px) scale(1.02) translateY(-4px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
       });
       el.addEventListener('mouseleave', () => {
         el.style.transition = '';
         el.style.transform = '';
       });
+    });
+  }
+
+  // Hamburger menu for mobile
+  const hamburger = document.getElementById('hamburgerBtn');
+  const sidebar = document.getElementById('sidebarEl');
+  const overlay = document.getElementById('sidebarOverlay');
+  if (hamburger && sidebar) {
+    function toggleMenu(open) {
+      const isOpen = typeof open === 'boolean' ? open : !sidebar.classList.contains('open');
+      sidebar.classList.toggle('open', isOpen);
+      if (overlay) overlay.classList.toggle('show', isOpen);
+    }
+    hamburger.addEventListener('click', () => toggleMenu());
+    if (overlay) overlay.addEventListener('click', () => toggleMenu(false));
+    // Close sidebar when a nav link is clicked (mobile)
+    sidebar.querySelectorAll('nav a').forEach(a => {
+      a.addEventListener('click', () => toggleMenu(false));
     });
   }
 })();

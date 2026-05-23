@@ -18,9 +18,14 @@
   <div class="bg-orb orb-b"></div>
   <div class="bg-orb orb-c"></div>
   <div id="appToast" class="toast"></div>
+  <button class="hamburger" id="hamburgerBtn" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="layout">
-    <aside class="sidebar glass">
+    <aside class="sidebar glass" id="sidebarEl">
       <h2>AirGuard Pro</h2>
+      <p class="mini"><span class="conn-dot" id="connDot"></span><span class="conn-label" id="connLabel">Checking...</span></p>
       <p class="mini">{{ user }} ({{ role }})</p>
       <nav>
         <a href="/dashboard">Dashboard</a>
@@ -34,6 +39,6 @@
       {% block content %}{% endblock %}
     </main>
   </div>
-  <script src="/static/ui-animations.js?v=20260513a"></script>
+  <script src="/static/ui-animations.js?v=20260523a"></script>
 </body>
 </html>

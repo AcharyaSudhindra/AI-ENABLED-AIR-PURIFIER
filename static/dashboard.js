@@ -14,6 +14,38 @@ function toast(msg){
   window.__toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
+function removeSkeleton(id){
+  const el = q(id);
+  if (el) el.classList.remove('skeleton');
+}
+
+function removeAllSkeletons(){
+  document.querySelectorAll('.skeleton').forEach(el => el.classList.remove('skeleton'));
+}
+
+function updateConnDot(source){
+  const dot = q('connDot');
+  const label = q('connLabel');
+  if (!dot || !label) return;
+  dot.classList.remove('online','offline','stale');
+  if (source === 'esp32') {
+    dot.classList.add('online');
+    label.textContent = 'ESP32 Live';
+  } else if (source === 'esp32-stale') {
+    dot.classList.add('stale');
+    label.textContent = 'ESP32 Stale';
+  } else if (source === 'esp32-offline') {
+    dot.classList.add('offline');
+    label.textContent = 'ESP32 Offline';
+  } else if (source === 'mock') {
+    dot.classList.add('online');
+    label.textContent = 'Mock Data';
+  } else {
+    dot.classList.add('offline');
+    label.textContent = source || 'Unknown';
+  }
+}
+
 function pulseValue(id, value){
   const el = q(id);
   if (!el) return;
@@ -59,12 +91,16 @@ function alerts(s){
 }
 
 function renderLive(live){
+  removeAllSkeletons();
   const noData = live.source === "esp32-offline" && Number(live.aqi || 0) === 0 && Number(live.pm25 || 0) === 0 && Number(live.voltage || 0) === 0;
   const offline = live.source === "esp32-offline";
   const aqiEl = q('aqi');
   const pmEl = q('pm25');
   const tempEl = q('temp');
   const humEl = q('hum');
+
+  updateConnDot(live.source);
+
   if (noData){
     if (aqiEl) aqiEl.textContent = '--';
     if (pmEl) pmEl.textContent = '--';
@@ -98,33 +134,45 @@ function renderLive(live){
 }
 
 async function refreshHistory(){
-  const hist=await fetch('/api/history?points=60').then(r=>r.json());
-  if (hist.length > 0) {
-    chart.data.labels=hist.map(x=>x.timestamp.slice(11));
-    chart.data.datasets[0].data=hist.map(x=>x.aqi);
-    chart.data.datasets[1].data=hist.map(x=>x.voltage);
-    chart.update();
+  try {
+    const hist=await fetch('/api/history?points=60').then(r=>r.json());
+    if (hist.length > 0) {
+      chart.data.labels=hist.map(x=>x.timestamp.slice(11));
+      chart.data.datasets[0].data=hist.map(x=>x.aqi);
+      chart.data.datasets[1].data=hist.map(x=>x.voltage);
+      chart.update();
+    }
+  } catch(e) {
+    console.warn('History fetch failed:', e);
   }
 }
 
 async function refreshPredict(){
-  const p = await fetch('/api/predict?horizon=12').then(r=>r.json());
-  const points = p.points || [];
-  predictChart.data.labels = points.map(x => x.time);
-  predictChart.data.datasets[0].data = points.map(x => x.aqi);
-  predictChart.update();
+  try {
+    const p = await fetch('/api/predict?horizon=12').then(r=>r.json());
+    const points = p.points || [];
+    predictChart.data.labels = points.map(x => x.time);
+    predictChart.data.datasets[0].data = points.map(x => x.aqi);
+    predictChart.update();
+  } catch(e) {
+    console.warn('Predict fetch failed:', e);
+  }
 }
 
 async function refreshFilterHealth(){
-  const f = await fetch('/api/filter-health').then(r=>r.json());
-  const health = Number(f.health_pct||0);
-  q('filterHealth').textContent = `${health.toFixed(1)}%`;
-  q('filterStatus').textContent = f.status || '--';
-  q('filterRuntime').textContent = `${Number(f.runtime_hours||0).toFixed(2)} h`;
-  q('filterLoad').textContent = Number(f.load_score||0).toFixed(1);
-  q('filterRingVal').textContent = `${health.toFixed(0)}%`;
-  setRing('filterRing', health);
-  pulseValue('filterHealth', health);
+  try {
+    const f = await fetch('/api/filter-health').then(r=>r.json());
+    const health = Number(f.health_pct||0);
+    q('filterHealth').textContent = `${health.toFixed(1)}%`;
+    q('filterStatus').textContent = f.status || '--';
+    q('filterRuntime').textContent = `${Number(f.runtime_hours||0).toFixed(2)} h`;
+    q('filterLoad').textContent = Number(f.load_score||0).toFixed(1);
+    q('filterRingVal').textContent = `${health.toFixed(0)}%`;
+    setRing('filterRing', health);
+    pulseValue('filterHealth', health);
+  } catch(e) {
+    console.warn('Filter health fetch failed:', e);
+  }
 }
 
 function renderAlerts(live){
@@ -160,24 +208,33 @@ function renderAlerts(live){
 }
 
 async function refresh(){
-  const live=await fetch('/api/live').then(r=>r.json());
-  renderLive(live);
-  renderAlerts(live);
-  await refreshHistory();
-  await refreshPredict();
-  await refreshFilterHealth();
+  try {
+    const live=await fetch('/api/live').then(r=>r.json());
+    renderLive(live);
+    renderAlerts(live);
+    await refreshHistory();
+    await refreshPredict();
+    await refreshFilterHealth();
+  } catch(e) {
+    console.warn('Refresh failed:', e);
+    updateConnDot('esp32-offline');
+  }
 }
 
 function startRealtime(){
   if (window.EventSource) {
     const source = new EventSource('/api/stream');
     source.onmessage = async (evt) => {
-      const live = JSON.parse(evt.data);
-      renderLive(live);
-      renderAlerts(live);
-      await refreshHistory();
-      await refreshPredict();
-      await refreshFilterHealth();
+      try {
+        const live = JSON.parse(evt.data);
+        renderLive(live);
+        renderAlerts(live);
+        await refreshHistory();
+        await refreshPredict();
+        await refreshFilterHealth();
+      } catch(e) {
+        console.warn('SSE message error:', e);
+      }
     };
     source.onerror = () => {
       source.close();
@@ -198,7 +255,11 @@ if (window.USER_ROLE !== 'admin') {
   if (b) b.style.display = 'none';
 }
 q('resetFilterBtn')?.addEventListener('click', async () => {
-  await fetch('/api/filter/reset', { method: 'POST' });
-  await refreshFilterHealth();
-  toast('Filter counter reset');
+  try {
+    await fetch('/api/filter/reset', { method: 'POST' });
+    await refreshFilterHealth();
+    toast('Filter counter reset');
+  } catch(e) {
+    toast('Failed to reset filter');
+  }
 });

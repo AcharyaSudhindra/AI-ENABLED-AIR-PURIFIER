@@ -1,5 +1,6 @@
 const el = (id) => document.getElementById(id);
 let currentRange = "24h";
+let lastPoints = [];
 
 const historyChart = new Chart(el("historyChart").getContext("2d"), {
   type: "line",
@@ -58,16 +59,56 @@ function renderTable(points) {
   el("dailyTable").innerHTML = html;
 }
 
+function exportCSV() {
+  if (!lastPoints.length) return;
+  const headers = ["Time","AQI","PM2.5","Voltage","Fan","Mode","Source"];
+  const rows = lastPoints.map(p => [
+    String(p.ts || p.timestamp || "").replace("T"," "),
+    Number(p.aqi || 0),
+    Number(p.pm25 || 0).toFixed(1),
+    Number(p.voltage || 0).toFixed(2),
+    p.fan_on ? "ON" : "OFF",
+    String(p.mode || "--").toUpperCase(),
+    p.source || "--"
+  ]);
+  let csv = headers.join(",") + "\n";
+  rows.forEach(r => csv += r.join(",") + "\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `airguard_report_${currentRange}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportJSON() {
+  if (!lastPoints.length) return;
+  const blob = new Blob([JSON.stringify(lastPoints, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `airguard_report_${currentRange}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function loadRange(rangeKey) {
   currentRange = rangeKey;
   setRangeButtons(rangeKey);
-  const res = await fetch(`/api/reports/history?range=${encodeURIComponent(rangeKey)}&max_points=700`);
-  const payload = await res.json();
-  const points = payload.points || [];
-  const stats = payload.stats || {};
-  renderRangeStats(stats, payload.range || rangeKey);
-  renderHistoryChart(points);
-  renderTable(points);
+  try {
+    const res = await fetch(`/api/reports/history?range=${encodeURIComponent(rangeKey)}&max_points=700`);
+    const payload = await res.json();
+    const points = payload.points || [];
+    const stats = payload.stats || {};
+    lastPoints = points;
+    renderRangeStats(stats, payload.range || rangeKey);
+    renderHistoryChart(points);
+    renderTable(points);
+  } catch(e) {
+    console.warn('Failed to load range:', e);
+    el("rangeMeta").textContent = "Failed to load data. Please try again.";
+  }
 }
 
 function renderNotifyStatus(status) {
@@ -77,10 +118,14 @@ function renderNotifyStatus(status) {
 }
 
 async function loadNotificationStatus() {
-  const status = await fetch("/api/notifications/status").then((r) => r.json());
-  el("notifyEmail").value = status.email_to || "";
-  el("notifyThreshold").value = String(status.aqi_threshold || 150);
-  renderNotifyStatus(status);
+  try {
+    const status = await fetch("/api/notifications/status").then((r) => r.json());
+    el("notifyEmail").value = status.email_to || "";
+    el("notifyThreshold").value = String(status.aqi_threshold || 150);
+    renderNotifyStatus(status);
+  } catch(e) {
+    console.warn('Failed to load notification status:', e);
+  }
 }
 
 async function saveNotificationConfig() {
@@ -89,35 +134,47 @@ async function saveNotificationConfig() {
     aqi_threshold: Number(el("notifyThreshold").value || 150),
     enabled: true,
   };
-  const r = await fetch("/api/notifications/config", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const out = await r.json();
-  renderNotifyStatus(out);
+  try {
+    const r = await fetch("/api/notifications/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const out = await r.json();
+    renderNotifyStatus(out);
+  } catch(e) {
+    el("notifyState").textContent = `Save failed: ${e.message || e}`;
+  }
 }
 
 async function sendTestEmail() {
   const payload = { email_to: (el("notifyEmail").value || "").trim() };
-  const r = await fetch("/api/notifications/test", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const out = await r.json();
-  if (!r.ok) {
-    const status = out.status || {};
-    renderNotifyStatus(status);
-    throw new Error(status.last_error || "Test email failed");
+  try {
+    const r = await fetch("/api/notifications/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const out = await r.json();
+    if (!r.ok) {
+      const status = out.status || {};
+      renderNotifyStatus(status);
+      throw new Error(status.last_error || "Test email failed");
+    }
+    renderNotifyStatus(out.status || {});
+  } catch(e) {
+    el("notifyState").textContent = `Test failed: ${e.message || e}`;
   }
-  renderNotifyStatus(out.status || {});
 }
 
 function bindEvents() {
   document.querySelectorAll(".range-chip").forEach((btn) => {
     btn.addEventListener("click", () => loadRange(btn.dataset.range || "24h"));
   });
+
+  // Export buttons
+  el("exportCsvBtn")?.addEventListener("click", exportCSV);
+  el("exportJsonBtn")?.addEventListener("click", exportJSON);
 
   const admin = window.USER_ROLE === "admin";
   const saveBtn = el("saveNotifyBtn");
@@ -132,11 +189,7 @@ function bindEvents() {
     await saveNotificationConfig();
   });
   testBtn?.addEventListener("click", async () => {
-    try {
-      await sendTestEmail();
-    } catch (e) {
-      el("notifyState").textContent = `Test failed: ${e.message || e}`;
-    }
+    await sendTestEmail();
   });
 }
 

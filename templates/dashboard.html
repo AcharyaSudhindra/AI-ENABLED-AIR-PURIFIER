@@ -4,13 +4,13 @@
 <section class="cards">
   <article class="glass card">
     <h3>AQI</h3>
-    <div class="ring" id="aqiRing"><span id="aqi">--</span></div>
-    <span id="aqiLabel">--</span>
+    <div class="ring" id="aqiRing"><span id="aqi" class="skeleton">&nbsp;&nbsp;&nbsp;</span></div>
+    <span id="aqiLabel" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
   </article>
-  <article class="glass card"><h3>PM2.5</h3><p id="pm25">--</p><span>GP2Y1010 (ug/m3)</span></article>
-  <article class="glass card"><h3>Temp / Humidity</h3><p><span id="temp">--</span>C</p><span><span id="hum">--</span>% RH</span></article>
-  <article class="glass card"><h3>Fan</h3><p id="fanWrap"><span id="fanIcon" class="fan-icon">*</span> <span id="fan">--</span></p><span id="mode">--</span></article>
-  <article class="glass card"><h3>Source</h3><p id="source">--</p><span id="time">--</span></article>
+  <article class="glass card"><h3>PM2.5</h3><p id="pm25" class="skeleton">&nbsp;&nbsp;</p><span>GP2Y1010 (ug/m3)</span></article>
+  <article class="glass card"><h3>Temp / Humidity</h3><p><span id="temp" class="skeleton">&nbsp;&nbsp;</span>C</p><span><span id="hum" class="skeleton">&nbsp;&nbsp;</span>% RH</span></article>
+  <article class="glass card"><h3>Fan</h3><p id="fanWrap"><span id="fanIcon" class="fan-icon">*</span> <span id="fan" class="skeleton">&nbsp;&nbsp;</span></p><span id="mode" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;</span></article>
+  <article class="glass card"><h3>Source</h3><p id="source" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;</p><span id="time" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></article>
 </section>
 <section class="grid2">
   <article class="glass panel"><h2>60-Point Trend</h2><canvas id="trend" height="120"></canvas></article>
@@ -20,14 +20,14 @@
   <article class="glass panel"><h2>Predictive AQI (Next 2 Hours)</h2><canvas id="predictChart" height="120"></canvas></article>
   <article class="glass panel">
     <h2>Filter Health Intelligence</h2>
-    <div class="mini">Health: <strong id="filterHealth">--</strong></div>
-    <div class="mini">Status: <strong id="filterStatus">--</strong></div>
-    <div class="mini">Runtime: <strong id="filterRuntime">--</strong></div>
-    <div class="mini">Load Score: <strong id="filterLoad">--</strong></div>
-    <div class="ring small" id="filterRing"><span id="filterRingVal">--</span></div>
+    <div class="mini">Health: <strong id="filterHealth" class="skeleton">&nbsp;&nbsp;&nbsp;</strong></div>
+    <div class="mini">Status: <strong id="filterStatus" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;</strong></div>
+    <div class="mini">Runtime: <strong id="filterRuntime" class="skeleton">&nbsp;&nbsp;&nbsp;</strong></div>
+    <div class="mini">Load Score: <strong id="filterLoad" class="skeleton">&nbsp;&nbsp;</strong></div>
+    <div class="ring small" id="filterRing"><span id="filterRingVal" class="skeleton">&nbsp;&nbsp;</span></div>
     <button id="resetFilterBtn" class="secondary" style="margin-top:10px;">Reset Filter Counter</button>
   </article>
 </section>
 <script>window.USER_ROLE = "{{ role }}";</script>
-<script src="/static/dashboard.js?v=20260515d"></script>
+<script src="/static/dashboard.js?v=20260523a"></script>
 {% endblock %}
