@@ -227,3 +227,57 @@ canvas { filter: drop-shadow(0 0 6px rgba(47, 215, 161, 0.4)); }
 }
 
 .card:hover, .panel:hover, .hero:hover, .login-card:hover { animation-play-state: paused !important; }
+
+/* Voice Control UI */
+.voice-btn {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(47, 215, 161, 0.9), rgba(242, 178, 79, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.voice-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 28px rgba(47, 215, 161, 0.5);
+}
+.voice-btn.listening {
+  animation: pulseListen 1.5s infinite;
+  background: linear-gradient(135deg, rgba(255, 122, 98, 0.9), rgba(242, 178, 79, 0.9));
+}
+@keyframes pulseListen {
+  0% { box-shadow: 0 0 0 0 rgba(255, 122, 98, 0.7); }
+  70% { box-shadow: 0 0 0 20px rgba(255, 122, 98, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 122, 98, 0); }
+}
+.voice-toast {
+  position: fixed;
+  top: 90px;
+  right: 24px;
+  background: rgba(0,0,0,0.8);
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  z-index: 99;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s;
+}
+.voice-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
