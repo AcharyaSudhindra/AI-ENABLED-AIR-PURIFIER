@@ -105,6 +105,7 @@ history = deque(maxlen=800)
 last_sample = None
 stop_event = threading.Event()
 last_esp32_error = ""
+chatbot_api_key = os.getenv("CHATBOT_API_KEY", "").strip()
 notification_state = {
     "email_to": ALERT_EMAIL_TO,
     "aqi_threshold": ALERT_AQI_THRESHOLD,
@@ -823,6 +824,14 @@ def _chatbot_answer(msg: str) -> str:
     )
 
 
+def _mask_key(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}{'*' * (len(value) - 8)}{value[-4:]}"
+
+
 @app.route("/")
 def root():
     if "user" in session:
@@ -1111,6 +1120,29 @@ def api_chat():
     if not msg:
         return jsonify({"reply": "Please type a question."})
     return jsonify({"reply": _chatbot_answer(msg)})
+
+
+@app.route("/api/chatbot/key", methods=["GET", "POST"])
+@require_api_login
+def api_chatbot_key():
+    global chatbot_api_key
+    if request.method == "GET":
+        return jsonify({
+            "configured": bool(chatbot_api_key),
+            "masked": _mask_key(chatbot_api_key),
+        })
+
+    if session.get("role") != "admin":
+        return jsonify({"error": "Forbidden: admin only"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    key = str(payload.get("api_key", "")).strip()
+    chatbot_api_key = key
+    return jsonify({
+        "ok": True,
+        "configured": bool(chatbot_api_key),
+        "masked": _mask_key(chatbot_api_key),
+    })
 
 
 init_storage()
