@@ -78,7 +78,7 @@ function setRing(id, pct){
   const el = q(id);
   if (!el) return;
   const p = Math.max(0, Math.min(100, pct));
-  el.style.setProperty('--pct', `${p}%`);
+  el.style.setProperty('--pct', p);
 }
 
 function alerts(s){
@@ -90,6 +90,30 @@ function alerts(s){
   return out;
 }
 
+let particleInterval = null;
+let currentFanState = null;
+function updateParticles(isFanOn) {
+  if (currentFanState === isFanOn && particleInterval) return;
+  currentFanState = isFanOn;
+  if (particleInterval) clearInterval(particleInterval);
+  const container = q('particles-container');
+  if (!container) return;
+  
+  const intervalMs = isFanOn ? 120 : 800;
+  particleInterval = setInterval(() => {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random() * 100 + 'vw';
+    const duration = isFanOn ? (2 + Math.random() * 3) : (6 + Math.random() * 4);
+    p.style.setProperty('--duration', duration + 's');
+    const size = isFanOn ? (3 + Math.random() * 5) : (2 + Math.random() * 3);
+    p.style.width = p.style.height = size + 'px';
+    if (!isFanOn) p.style.background = 'rgba(114,240,201,.2)';
+    container.appendChild(p);
+    setTimeout(() => p.remove(), duration * 1000);
+  }, intervalMs);
+}
+
 function renderLive(live){
   removeAllSkeletons();
   const noData = live.source === "esp32-offline" && Number(live.aqi || 0) === 0 && Number(live.pm25 || 0) === 0 && Number(live.voltage || 0) === 0;
@@ -98,6 +122,12 @@ function renderLive(live){
   const pmEl = q('pm25');
   const tempEl = q('temp');
   const humEl = q('hum');
+
+  document.body.classList.remove('drama-warn', 'drama-bad');
+  if (!noData) {
+    if (Number(live.aqi) > 150) document.body.classList.add('drama-bad');
+    else if (Number(live.aqi) > 100) document.body.classList.add('drama-warn');
+  }
 
   updateConnDot(live.source);
 
@@ -133,6 +163,8 @@ function renderLive(live){
   if (fanIcon) {
     fanIcon.classList.toggle('spin', !!live.fan_on && !noData);
   }
+  
+  updateParticles(!!live.fan_on && !noData);
 
   pulseValue('aqi', live.aqi);
   pulseValue('pm25', live.pm25);

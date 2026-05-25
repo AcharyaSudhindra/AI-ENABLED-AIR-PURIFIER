@@ -2,10 +2,10 @@
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const links = document.querySelectorAll('a[href^="/"]');
   links.forEach((a) => {
-    a.addEventListener('click', () => {
+    a.addEventListener('click', (e) => {
       const href = a.getAttribute('href');
       if (!href || href === location.pathname || a.target === '_blank') return;
-      // Keep normal navigation: no transition overlay / blink effect.
+      // Normal navigation occurs instantly, View Transitions API handles animation natively
     });
   });
 
@@ -22,7 +22,7 @@
     if (a.getAttribute('href') === path) a.classList.add('active');
   });
 
-  if (!prefersReducedMotion && 'IntersectionObserver' in window) {
+  if ('IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -37,7 +37,7 @@
     });
   }
 
-  if (!prefersReducedMotion) {
+  if (true) {
     const numEls = document.querySelectorAll('.card p, .ring span');
     numEls.forEach((el) => {
       const txt = (el.textContent || '').trim();
@@ -59,10 +59,15 @@
     });
   }
 
-  if (!prefersReducedMotion) {
-    document.querySelectorAll('.card, .glass.panel').forEach(el => {
+  if (true) {
+    document.querySelectorAll('.card, .panel, .hero, .login-card').forEach(el => {
+      const glare = document.createElement('div');
+      glare.className = 'glare';
+      el.appendChild(glare);
+
       el.addEventListener('mouseenter', () => {
         el.style.transition = 'transform 0.1s ease-out, box-shadow 0.3s ease, background 0.3s ease';
+        glare.style.opacity = '1';
       });
       el.addEventListener('mousemove', e => {
         const rect = el.getBoundingClientRect();
@@ -74,10 +79,12 @@
         const tiltX = ((y - centerY) / centerY) * -maxTilt;
         const tiltY = ((x - centerX) / centerX) * maxTilt;
         el.style.transform = `perspective(1000px) scale(1.02) translateY(-4px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+        glare.style.transform = `translate(${x - rect.width}px, ${y - rect.height}px)`;
       });
       el.addEventListener('mouseleave', () => {
         el.style.transition = '';
         el.style.transform = '';
+        glare.style.opacity = '0';
       });
     });
   }

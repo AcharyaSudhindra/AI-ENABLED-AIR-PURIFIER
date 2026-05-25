@@ -4,7 +4,10 @@
 <section class="cards">
   <article class="glass card">
     <h3>AQI</h3>
-    <div class="ring" id="aqiRing"><span id="aqi" class="skeleton">&nbsp;&nbsp;&nbsp;</span></div>
+    <div class="ring" id="aqiRing">
+      <svg viewBox="0 0 100 100"><circle class="ring-track" cx="50" cy="50" r="44"></circle><circle class="ring-fill" cx="50" cy="50" r="44"></circle></svg>
+      <span id="aqi" class="skeleton">&nbsp;&nbsp;&nbsp;</span>
+    </div>
     <span id="aqiLabel" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
   </article>
   <article class="glass card"><h3>PM2.5</h3><p id="pm25" class="skeleton">&nbsp;&nbsp;</p><span>GP2Y1010 (ug/m3)</span></article>
@@ -28,7 +31,10 @@
     <div class="mini">Status: <strong id="filterStatus" class="skeleton">&nbsp;&nbsp;&nbsp;&nbsp;</strong></div>
     <div class="mini">Runtime: <strong id="filterRuntime" class="skeleton">&nbsp;&nbsp;&nbsp;</strong></div>
     <div class="mini">Load Score: <strong id="filterLoad" class="skeleton">&nbsp;&nbsp;</strong></div>
-    <div class="ring small" id="filterRing"><span id="filterRingVal" class="skeleton">&nbsp;&nbsp;</span></div>
+    <div class="ring small" id="filterRing">
+      <svg viewBox="0 0 100 100"><circle class="ring-track" cx="50" cy="50" r="44"></circle><circle class="ring-fill" cx="50" cy="50" r="44"></circle></svg>
+      <span id="filterRingVal" class="skeleton">&nbsp;&nbsp;</span>
+    </div>
     <button id="resetFilterBtn" class="secondary" style="margin-top:10px;">Reset Filter Counter</button>
   </article>
 </section>
