@@ -10,9 +10,9 @@
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-#define MQ135_PIN 34
+#define MQ135_PIN 5
 #define RELAY_PIN 25
-#define GP2Y_VO_PIN 35
+#define GP2Y_VO_PIN 6
 #define GP2Y_LED_PIN 26
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
