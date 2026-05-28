@@ -13,7 +13,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define MQ135_PIN 5
 #define RELAY_PIN 25
 #define GP2Y_VO_PIN 6
-#define GP2Y_LED_PIN 26
+#define GP2Y_LED_PIN 7
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
 // Set to 1 for active-LOW relay modules, 0 for active-HIGH modules.
@@ -295,14 +295,14 @@ void setup() {
   dht.begin();
   setFan(false);
 
+  Wire.begin(8, 9); // ESP32-S3 default SDA=8, SCL=9
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("SSD1306 allocation failed");
     for (;;) {}
   }
 
   analogReadResolution(12);
-  analogSetPinAttenuation(MQ135_PIN, ADC_11db);
-  analogSetPinAttenuation(GP2Y_VO_PIN, ADC_11db);
+  // analogSetPinAttenuation is deprecated in ESP32 Core 3.x, and 11dB is the default.
   calibrateGp2yBaseline();
   latestVoltage = readSmoothedVoltage();
   latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);

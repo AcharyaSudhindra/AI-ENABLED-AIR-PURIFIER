@@ -6,7 +6,7 @@
 |----------------|--------------|
 | MQ135 AOUT     | GPIO 5 (ADC) |
 | GP2Y1010 VO    | GPIO 6 (ADC) |
-| GP2Y1010 LED   | GPIO 26      |
+| GP2Y1010 LED   | GPIO 7       |
 | OLED SDA       | GPIO 8       |
 | OLED SCL       | GPIO 9       |
 | Relay          | GPIO 25      |
@@ -34,7 +34,7 @@ const char* password = "YOUR_PASSWORD";
 // Pin definitions
 #define MQ135_PIN     5
 #define GP2Y_VO_PIN   6
-#define GP2Y_LED_PIN  26
+#define GP2Y_LED_PIN  7
 #define RELAY_PIN     25
 #define DHT_PIN       4
 
