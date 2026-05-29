@@ -1,28 +1,31 @@
 #include <WiFi.h>
+#include <WiFiManager.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
+#include <ESPmDNS.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 #define MQ135_PIN 5
-#define RELAY_PIN 25
-#define GP2Y_VO_PIN 6
-#define GP2Y_LED_PIN 7
+#define RELAY_PIN 2
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
+
+// Set to 1 to enable the GP2Y1010 dust sensor, 0 to disable
+#define ENABLE_GP2Y1010 0
+#define GP2Y_VO_PIN 6
+#define GP2Y_LED_PIN 7
+
 // Set to 1 for active-LOW relay modules, 0 for active-HIGH modules.
 #define RELAY_ACTIVE_LOW 1
 
 DHT dht(DHT_PIN, DHT_TYPE);
-
-const char* WIFI_SSID = "Sudhindra";
-const char* WIFI_PASSWORD = "sudhindra2024@";
 
 WebServer server(80);
 
@@ -50,9 +53,18 @@ bool gp2yDebug = true;
 int lastGp2yRaw = 0;
 float lastGp2yVo = 0.0f;
 
+String getAQICategory(int aqi) {
+  if (aqi <= 50)  return "GOOD";
+  if (aqi <= 100) return "MODERATE";
+  if (aqi <= 150) return "UNHEALTHY*";
+  if (aqi <= 200) return "UNHEALTHY";
+  if (aqi <= 300) return "VERY UNHLT";
+  return "HAZARDOUS";
+}
+
 float readSmoothedVoltage() {
   int raw = analogRead(MQ135_PIN);
-  float voltage = (raw / 4095.0f) * 3.3f;
+  float voltage = analogReadMilliVolts(MQ135_PIN) / 1000.0f;
 
   sampleBuffer[sampleIndex] = voltage;
   sampleIndex = (sampleIndex + 1) % SAMPLE_COUNT;
@@ -72,14 +84,21 @@ float readSmoothedVoltage() {
   return sum / count;
 }
 
+// Set this to the voltage your sensor outputs in normal/clean air
+float mq135BaseVoltage = 1.0f;
+
 int voltageToAQI(float voltage) {
-  int aqi = (int)((voltage / 3.3f) * 500.0f);
-  if (aqi < 0) return 0;
+  float diff = voltage - mq135BaseVoltage;
+  if (diff <= 0.0f) return 0;
+  
+  // Map a 1.5V increase above baseline to a maximum of 500 AQI
+  int aqi = (int)((diff / 1.5f) * 500.0f);
   if (aqi > 500) return 500;
   return aqi;
 }
 
 float readDustPM25Raw() {
+#if ENABLE_GP2Y1010
   // GP2Y1010 timing sequence
   digitalWrite(GP2Y_LED_PIN, LOW);
   delayMicroseconds(280);
@@ -94,9 +113,13 @@ float readDustPM25Raw() {
   float dust = (vo - gp2yBaseVoltage) / 0.005f; // ug/m3 approximation
   if (dust < 0.0f) dust = 0.0f;
   return dust;
+#else
+  return 0.0f;
+#endif
 }
 
 void calibrateGp2yBaseline() {
+#if ENABLE_GP2Y1010
   // Calibrate baseline from live pulses at boot so PM2.5 does not stick at 0 due to fixed offset.
   const int n = 30;
   float sumVo = 0.0f;
@@ -113,6 +136,10 @@ void calibrateGp2yBaseline() {
   Serial.print("GP2Y baseline calibrated: ");
   Serial.print(gp2yBaseVoltage, 3);
   Serial.println("V");
+#else
+  gp2yBaseVoltage = 0.0f;
+  Serial.println("GP2Y sensor disabled.");
+#endif
 }
 
 float readDustPM25Stable() {
@@ -218,68 +245,89 @@ void handleControl() {
 }
 
 void drawOLED(float voltage) {
-  int adc = (int)((voltage / 3.3f) * 4095.0f);
   int aqi = voltageToAQI(voltage);
 
   display.clearDisplay();
+
+  // ── Title Bar ──
+  display.fillRect(0, 0, SCREEN_WIDTH, 12, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
   display.setTextSize(1);
+  display.setCursor(22, 2);
+  display.print("AIR PURIFIER v1.0");
+
+  // ── AQI Value (large) ──
   display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(0, 16);
+  display.print("AQI:");
+  display.print(aqi);
 
-  display.setCursor(0, 0);
-  display.println("Air Purifier ESP32");
+  // ── AQI Category & PM2.5 ──
+  display.setTextSize(1);
+  display.setCursor(0, 36);
+  display.print(getAQICategory(aqi));
+  display.print(" PM:");
+  display.print((int)latestPm25);
 
-  display.setCursor(0, 14);
-  display.print("ADC: ");
-  display.println(adc);
+  // ── Divider ──
+  display.drawLine(0, 46, SCREEN_WIDTH, 46, SSD1306_WHITE);
 
-  display.setCursor(0, 26);
-  display.print("Volt: ");
-  display.print(voltage, 2);
-  display.println("V");
-
-  display.setCursor(0, 38);
-  display.print("PM:");
-  display.print(latestPm25, 1);
-  display.println("ug");
-
+  // ── Temperature & Humidity ──
+  display.setTextSize(1);
   display.setCursor(0, 50);
-  bool showClimate = ((millis() / 2000UL) % 2UL) == 0UL;
-  if (showClimate) {
-    display.print("T:");
-    display.print(latestTempC, 1);
-    display.print("C H:");
-    display.print(latestHumidity, 0);
-    display.print("%");
+  display.print("T:");
+  if (isnan(latestTempC)) {
+    display.print("--");
   } else {
-    display.print("F:");
-    display.print(fanOn ? "ON " : "OFF");
-    display.print(" AqI:");
-    display.print(aqi);
-    display.print(" ");
-    display.print(autoMode ? "A" : "M");
+    display.print(latestTempC, 1);
+    display.print("C");
+  }
+
+  display.setCursor(55, 50);
+  display.print("H:");
+  if (isnan(latestHumidity)) {
+    display.print("--");
+  } else {
+    display.print(latestHumidity, 1);
+    display.print("%");
+  }
+
+  // ── Fan Status (right side) ──
+  display.setTextSize(1);
+  if (fanOn) {
+    display.fillRoundRect(88, 14, 40, 28, 4, SSD1306_WHITE);
+    display.setTextColor(SSD1306_BLACK);
+    display.setCursor(93, 18);
+    display.print(" FAN");
+    display.setCursor(95, 28);
+    display.print(" ON");
+    display.setTextColor(SSD1306_WHITE);
+  } else {
+    display.drawRoundRect(88, 14, 40, 28, 4, SSD1306_WHITE);
+    display.setCursor(93, 18);
+    display.print(" FAN");
+    display.setCursor(94, 28);
+    display.print(" OFF");
   }
 
   display.display();
 }
 
 void connectWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFiManager wm;
+  // Set a 3-minute timeout for the captive portal
+  wm.setConfigPortalTimeout(180);
 
-  Serial.print("Connecting WiFi");
-  int retries = 0;
-  while (WiFi.status() != WL_CONNECTED && retries < 30) {
-    delay(500);
-    Serial.print(".");
-    retries++;
-  }
-  Serial.println();
+  Serial.println("Starting WiFiManager...");
+  // This will auto connect or start an AP named "AirPurifierSetup"
+  bool res = wm.autoConnect("AirPurifierSetup");
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Connected. IP: ");
-    Serial.println(WiFi.localIP());
+  if (!res) {
+    Serial.println("Failed to connect or hit timeout. Running local only.");
   } else {
-    Serial.println("WiFi not connected. Running local only.");
+    Serial.print("Connected! IP: ");
+    Serial.println(WiFi.localIP());
   }
 }
 
@@ -290,8 +338,10 @@ void setup() {
   Serial.println(RELAY_ACTIVE_LOW ? "ACTIVE_LOW" : "ACTIVE_HIGH");
 
   pinMode(RELAY_PIN, OUTPUT);
+#if ENABLE_GP2Y1010
   pinMode(GP2Y_LED_PIN, OUTPUT);
   digitalWrite(GP2Y_LED_PIN, HIGH);
+#endif
   dht.begin();
   setFan(false);
 
@@ -317,6 +367,16 @@ void setup() {
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/control", HTTP_POST, handleControl);
   server.begin();
+
+  // Start mDNS so Xiaozhi can find us as "airpurifier.local"
+  if (WiFi.status() == WL_CONNECTED) {
+    if (MDNS.begin("airpurifier")) {
+      MDNS.addService("http", "tcp", 80);
+      Serial.println("mDNS started: airpurifier.local");
+    } else {
+      Serial.println("mDNS failed to start");
+    }
+  }
 
   display.clearDisplay();
   display.setTextSize(1);
