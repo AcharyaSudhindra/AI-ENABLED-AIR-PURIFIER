@@ -41,6 +41,7 @@ const int SAMPLE_COUNT = 12;
 float sampleBuffer[SAMPLE_COUNT];
 int sampleIndex = 0;
 bool samplesReady = false;
+bool aqiInitialized = false;
 
 unsigned long lastDisplayMs = 0;
 unsigned long lastWiFiReconnectMs = 0;
@@ -49,10 +50,12 @@ unsigned long bootMs = 0;
 float latestVoltage = 0.0f;
 int latestAdc = 0;
 int latestAqi = 0;
+float smoothedAqi = 0.0f;
 float latestPm25 = 0.0f;
 float latestTempC = 0.0f;
 float latestHumidity = 0.0f;
 bool dhtValid = false;
+bool dhtEverValid = false;
 float pm25Filtered = 0.0f;
 float gp2yBaseVoltage = 0.45f; // initial baseline; tune from serial debug output
 bool gp2yDebug = true;
@@ -68,9 +71,29 @@ String getAQICategory(int aqi) {
   return "HAZARDOUS";
 }
 
+float readMedianVoltage() {
+  const int n = 9;
+  float readings[n];
+  for (int i = 0; i < n; i++) {
+    readings[i] = analogReadMilliVolts(MQ135_PIN) / 1000.0f;
+    delay(2);
+  }
+
+  for (int i = 1; i < n; i++) {
+    float value = readings[i];
+    int j = i - 1;
+    while (j >= 0 && readings[j] > value) {
+      readings[j + 1] = readings[j];
+      j--;
+    }
+    readings[j + 1] = value;
+  }
+
+  return readings[n / 2];
+}
+
 float readSmoothedVoltage() {
-  int raw = analogRead(MQ135_PIN);
-  float voltage = analogReadMilliVolts(MQ135_PIN) / 1000.0f;
+  float voltage = readMedianVoltage();
 
   sampleBuffer[sampleIndex] = voltage;
   sampleIndex = (sampleIndex + 1) % SAMPLE_COUNT;
@@ -99,7 +122,7 @@ void calibrateMq135Baseline() {
   const int n = 40;
   float sum = 0.0f;
   for (int i = 0; i < n; i++) {
-    sum += analogReadMilliVolts(MQ135_PIN) / 1000.0f;
+    sum += readMedianVoltage();
     delay(25);
   }
 
@@ -124,13 +147,30 @@ int voltageToAQI(float voltage) {
   return aqi;
 }
 
+int smoothAQI(int rawAqi) {
+  if (!aqiInitialized) {
+    smoothedAqi = rawAqi;
+    aqiInitialized = true;
+  } else {
+    smoothedAqi = (smoothedAqi * 0.85f) + (rawAqi * 0.15f);
+  }
+  return (int)(smoothedAqi + 0.5f);
+}
+
 void readDhtSensor() {
+  lastDhtMs = millis();
   float t = dht.readTemperature();
   float h = dht.readHumidity();
   dhtValid = !isnan(t) && !isnan(h);
   if (dhtValid) {
     latestTempC = t;
     latestHumidity = h;
+    dhtEverValid = true;
+  } else {
+    Serial.print("[DHT ERROR] Temp: ");
+    Serial.print(t);
+    Serial.print(" Hum: ");
+    Serial.println(h);
   }
 }
 
@@ -235,14 +275,14 @@ void handleStatus() {
   doc["aqi"] = latestAqi;
   doc["mq135_baseline_voltage"] = mq135BaseVoltage;
   doc["pm25"] = latestPm25;
-  if (dhtValid) {
+  if (dhtEverValid) {
     doc["temperature_c"] = latestTempC;
     doc["humidity"] = latestHumidity;
   } else {
     doc["temperature_c"] = nullptr;
     doc["humidity"] = nullptr;
   }
-  doc["dht_ok"] = dhtValid;
+  doc["dht_ok"] = dhtEverValid;
   doc["fan_on"] = fanOn;
   doc["mode"] = autoMode ? "auto" : "manual";
   doc["threshold_voltage"] = thresholdVoltage;
@@ -294,8 +334,6 @@ void handleControl() {
 }
 
 void drawOLED(float voltage) {
-  int aqi = voltageToAQI(voltage);
-
   display.clearDisplay();
 
   // ── Title Bar ──
@@ -310,12 +348,12 @@ void drawOLED(float voltage) {
   display.setTextSize(2);
   display.setCursor(0, 16);
   display.print("AQI:");
-  display.print(aqi);
+  display.print(latestAqi);
 
   // ── AQI Category & PM2.5 ──
   display.setTextSize(1);
   display.setCursor(0, 36);
-  display.print(getAQICategory(aqi));
+  display.print(getAQICategory(latestAqi));
   display.print(" PM:");
   display.print((int)latestPm25);
 
@@ -326,7 +364,7 @@ void drawOLED(float voltage) {
   display.setTextSize(1);
   display.setCursor(0, 50);
   display.print("T:");
-  if (isnan(latestTempC)) {
+  if (!dhtEverValid) {
     display.print("--");
   } else {
     display.print(latestTempC, 1);
@@ -335,7 +373,7 @@ void drawOLED(float voltage) {
 
   display.setCursor(55, 50);
   display.print("H:");
-  if (isnan(latestHumidity)) {
+  if (!dhtEverValid) {
     display.print("--");
   } else {
     display.print(latestHumidity, 1);
@@ -429,9 +467,10 @@ void setup() {
   calibrateGp2yBaseline();
   latestVoltage = readSmoothedVoltage();
   latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);
-  latestAqi = voltageToAQI(latestVoltage);
+  latestAqi = smoothAQI(voltageToAQI(latestVoltage));
   latestPm25 = readDustPM25Stable();
-  readDhtSensor();
+  
+  // Give DHT11 more time to warm up. It will be read in loop() after 2.5s
   connectWiFi();
 
   server.on("/api/status", HTTP_GET, handleStatus);
@@ -468,12 +507,11 @@ void loop() {
   float voltage = readSmoothedVoltage();
   latestVoltage = voltage;
   latestAdc = (int)((voltage / 3.3f) * 4095.0f);
-  latestAqi = voltageToAQI(voltage);
+  latestAqi = smoothAQI(voltageToAQI(voltage));
   latestPm25 = readDustPM25Stable();
   
-  if (millis() - lastDhtMs > 2000) {
+  if (millis() - lastDhtMs > 2500) {
     readDhtSensor();
-    lastDhtMs = millis();
   }
   updateControl(voltage);
 

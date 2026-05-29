@@ -40,6 +40,9 @@
   if (true) {
     const numEls = document.querySelectorAll('.card p, .ring span');
     numEls.forEach((el) => {
+      if (el.querySelector('#temp, #hum, #fanStatus, #fanIcon') || ['aqi', 'pm25', 'temp', 'hum', 'fanStatus'].includes(el.id)) {
+        return;
+      }
       const txt = (el.textContent || '').trim();
       const n = Number(txt.replace(/[^\d.-]/g, ''));
       if (!Number.isFinite(n)) return;
