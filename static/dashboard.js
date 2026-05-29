@@ -60,7 +60,11 @@ function pulseValue(id, value){
 
 function animateNumber(el, to, suffix=''){
   if (!el || !Number.isFinite(to)) return;
-  const from = Number(el.dataset.prevVal || 0);
+  const from = Number(el.dataset.prevVal || to);
+  // Set immediately so the value is visible right away
+  el.textContent = (Math.abs(to) >= 100 ? to.toFixed(0) : to.toFixed(1)) + suffix;
+  el.dataset.prevVal = String(to);
+  if (from === to) return; // no animation needed
   const start = performance.now();
   const dur = 420;
   function frame(t){
@@ -72,6 +76,17 @@ function animateNumber(el, to, suffix=''){
     else el.dataset.prevVal = String(to);
   }
   requestAnimationFrame(frame);
+}
+
+function renderMetric(el, value, suffix=''){
+  if (!el) return;
+  const numeric = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(numeric)) {
+    el.textContent = '--';
+    delete el.dataset.prevVal;
+    return;
+  }
+  animateNumber(el, numeric, suffix);
 }
 
 function setRing(id, pct){
@@ -137,10 +152,10 @@ function renderLive(live){
     if (tempEl) tempEl.textContent = '--';
     if (humEl) humEl.textContent = '--';
   } else {
-    animateNumber(aqiEl, Number(live.aqi || 0));
-    animateNumber(pmEl, Number(live.pm25 || 0));
-    animateNumber(tempEl, Number(live.temperature_c || 0));
-    animateNumber(humEl, Number(live.humidity || 0));
+    renderMetric(aqiEl, live.aqi);
+    renderMetric(pmEl, live.pm25);
+    renderMetric(tempEl, live.temperature_c);
+    renderMetric(humEl, live.humidity);
     setRing('aqiRing', (Number(live.aqi||0)/500)*100);
   }
 
@@ -155,7 +170,19 @@ function renderLive(live){
       fanBadge.className = `fan-badge ${live.fan_on ? 'fan-on' : 'fan-off'}`;
     }
   }
-  q('mode').textContent = noData ? "Mode --" : `Mode ${live.mode.toUpperCase()}`;
+  // Update mode row: show both mode (AUTO/MANUAL) and fan state clearly
+  const modeRow = q('fanModeRow');
+  if (modeRow) {
+    if (noData) {
+      modeRow.textContent = 'Mode --';
+      modeRow.className = 'skeleton';
+    } else {
+      const modeTxt = (live.mode || 'auto').toUpperCase();
+      const stateTxt = live.fan_on ? 'ON' : 'OFF';
+      modeRow.textContent = `${modeTxt} · Fan ${stateTxt}`;
+      modeRow.className = `fan-mode-row mode-${(live.mode||'auto').toLowerCase()}`;
+    }
+  }
   q('source').textContent = live.source === "esp32-stale" ? "esp32 (stale)" : live.source;
   q('time').textContent=live.timestamp;
 

@@ -29,7 +29,7 @@ def _load_dotenv(dotenv_path: str = ".env") -> None:
                 key, val = s.split("=", 1)
                 key = key.strip()
                 val = val.strip().strip('"').strip("'")
-                if key and key not in os.environ:
+                if key:
                     os.environ[key] = val
     except Exception:
         pass
@@ -59,6 +59,9 @@ def _resolve_esp32_base_url() -> str:
 
 ESP32_BASE_URL = _resolve_esp32_base_url()
 REQUEST_TIMEOUT = 2.0
+ESP32_HTTP = requests.Session()
+ESP32_HTTP.trust_env = False
+ESP32_HTTP.headers.update({"Connection": "close"})
 
 DB_DIR = os.path.join(os.getcwd(), "data")
 LOG_DIR = os.path.join(os.getcwd(), "logs")
@@ -144,6 +147,17 @@ def init_storage():
         )
         """
     )
+    existing_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(readings)").fetchall()
+    }
+    for col_name, col_type in {
+        "pm25": "REAL",
+        "temperature_c": "REAL",
+        "humidity": "REAL",
+    }.items():
+        if col_name not in existing_cols:
+            conn.execute(f"ALTER TABLE readings ADD COLUMN {col_name} {col_type}")
     conn.commit()
     conn.close()
 
@@ -160,6 +174,9 @@ def init_storage():
                 "mode",
                 "threshold_voltage",
                 "source",
+                "pm25",
+                "temperature_c",
+                "humidity",
             ])
 
 
@@ -301,13 +318,21 @@ def _mock_sensor_payload() -> dict:
     }
 
 
+def _optional_float(raw: dict, *keys: str):
+    for key in keys:
+        value = raw.get(key)
+        if value is not None and value != "":
+            return round(float(value), 1)
+    return None
+
+
 def _read_esp32_payload() -> dict:
     last_err = None
     raw = None
     # Support both current and older firmware endpoint shapes.
     for path in ("/api/status", "/status"):
         try:
-            resp = requests.get(f"{ESP32_BASE_URL}{path}", timeout=REQUEST_TIMEOUT)
+            resp = ESP32_HTTP.get(f"{ESP32_BASE_URL}{path}", timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
             raw = resp.json()
             break
@@ -339,15 +364,21 @@ def _read_esp32_payload() -> dict:
         "adc": adc,
         "voltage": round(voltage, 3),
         "aqi": aqi,
-        "pm25": round(float(raw.get("pm25", raw.get("pm_2_5", raw.get("pm", 0.0)))), 1),
-        "temperature_c": round(float(raw.get("temperature_c", raw.get("temp_c", raw.get("temperature", 0.0)))), 1),
-        "humidity": round(float(raw.get("humidity", raw.get("rh", 0.0))), 1),
+        "pm25": _optional_float(raw, "pm25", "pm_2_5", "pm") or 0.0,
+        "temperature_c": _optional_float(raw, "temperature_c", "temp_c", "temperature"),
+        "humidity": _optional_float(raw, "humidity", "rh"),
         "aqi_label": _aqi_label(aqi),
         "fan_on": fan_on,
         "mode": mode,
         "threshold_voltage": threshold,
         "timestamp": raw.get("timestamp", _iso_now()),
         "source": "esp32",
+        "dht_ok": bool(raw.get("dht_ok", raw.get("temperature_c") is not None)),
+        "mq135_baseline_voltage": raw.get("mq135_baseline_voltage"),
+        "wifi_connected": bool(raw.get("wifi_connected", True)),
+        "wifi_ip": str(raw.get("wifi_ip", "")),
+        "wifi_rssi": raw.get("wifi_rssi"),
+        "uptime_sec": raw.get("uptime_sec"),
     }
 
 
@@ -355,8 +386,11 @@ def _persist_sample(sample: dict):
     conn = _db_conn()
     conn.execute(
         """
-        INSERT INTO readings (ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO readings (
+            ts, adc, voltage, aqi, aqi_label, fan_on, mode,
+            threshold_voltage, source, pm25, temperature_c, humidity
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             sample["timestamp"],
@@ -368,6 +402,9 @@ def _persist_sample(sample: dict):
             sample["mode"],
             sample["threshold_voltage"],
             sample["source"],
+            sample.get("pm25"),
+            sample.get("temperature_c"),
+            sample.get("humidity"),
         ),
     )
     conn.commit()
@@ -378,7 +415,8 @@ def _persist_sample(sample: dict):
         writer.writerow([
             sample["timestamp"], sample["adc"], sample["voltage"], sample["aqi"],
             sample["aqi_label"], int(sample["fan_on"]), sample["mode"],
-            sample["threshold_voltage"], sample["source"]
+            sample["threshold_voltage"], sample["source"], sample.get("pm25"),
+            sample.get("temperature_c"), sample.get("humidity")
         ])
 
 
@@ -386,28 +424,46 @@ def _load_last_persisted_sample() -> dict | None:
     conn = _db_conn()
     row = conn.execute(
         """
-        SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage, source
+        SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage,
+               source, pm25, temperature_c, humidity
         FROM readings
-        ORDER BY id DESC
+        WHERE source = 'esp32'
+        ORDER BY ts DESC, id DESC
         LIMIT 1
         """
     ).fetchone()
+    if row is None:
+        row = conn.execute(
+            """
+            SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage,
+                   source, pm25, temperature_c, humidity
+            FROM readings
+            ORDER BY ts DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
     conn.close()
     if not row:
         return None
+    pm25 = row["pm25"]
     return {
         "adc": int(row["adc"]),
         "voltage": float(row["voltage"]),
         "aqi": int(row["aqi"]),
-        "pm25": round(max(0.0, float(row["aqi"]) / 2.1), 1),
-        "temperature_c": 0.0,
-        "humidity": 0.0,
+        "pm25": round(float(pm25), 1) if pm25 is not None else round(max(0.0, float(row["aqi"]) / 2.1), 1),
+        "temperature_c": round(float(row["temperature_c"]), 1) if row["temperature_c"] is not None else None,
+        "humidity": round(float(row["humidity"]), 1) if row["humidity"] is not None else None,
         "aqi_label": row["aqi_label"] or _aqi_label(int(row["aqi"])),
         "fan_on": bool(row["fan_on"]),
         "mode": row["mode"] or state["mode"],
         "threshold_voltage": float(row["threshold_voltage"]),
         "timestamp": row["ts"],
         "source": row["source"] or "esp32",
+        "dht_ok": row["temperature_c"] is not None and row["humidity"] is not None,
+        "wifi_connected": False,
+        "wifi_ip": "",
+        "wifi_rssi": None,
+        "uptime_sec": None,
     }
 
 
@@ -499,7 +555,30 @@ def sampling_worker():
 def _forward_control_to_esp32(params: dict) -> None:
     if not ESP32_BASE_URL:
         return
-    requests.post(f"{ESP32_BASE_URL}/api/control", json=params, timeout=REQUEST_TIMEOUT)
+    ESP32_HTTP.post(f"{ESP32_BASE_URL}/api/control", json=params, timeout=REQUEST_TIMEOUT)
+
+
+def _probe_esp32_status() -> dict:
+    if not ESP32_BASE_URL:
+        return {"ok": False, "error": "ESP32_BASE_URL not configured"}
+
+    last_err = None
+    for path in ("/api/status", "/status"):
+        try:
+            started = time.time()
+            resp = ESP32_HTTP.get(f"{ESP32_BASE_URL}{path}", timeout=REQUEST_TIMEOUT)
+            elapsed_ms = int((time.time() - started) * 1000)
+            return {
+                "ok": resp.ok,
+                "path": path,
+                "status_code": resp.status_code,
+                "elapsed_ms": elapsed_ms,
+                "payload": resp.json() if resp.ok else None,
+            }
+        except Exception as e:
+            last_err = str(e)
+
+    return {"ok": False, "error": last_err or "ESP32 status fetch failed"}
 
 
 def _daily_report_for(days: int = 7):
@@ -560,7 +639,8 @@ def _history_for_range(range_key: str, max_points: int = 500) -> dict:
     conn = _db_conn()
     rows = conn.execute(
         """
-        SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage, source
+        SELECT ts, adc, voltage, aqi, aqi_label, fan_on, mode, threshold_voltage,
+               source, pm25, temperature_c, humidity
         FROM readings
         WHERE replace(ts, 'T', ' ') >= datetime('now', ?)
         ORDER BY ts ASC
@@ -590,7 +670,9 @@ def _history_for_range(range_key: str, max_points: int = 500) -> dict:
         point["aqi"] = int(point["aqi"])
         point["voltage"] = float(point["voltage"])
         point["fan_on"] = bool(point["fan_on"])
-        point["pm25"] = round(max(0.0, point["aqi"] / 2.1), 1)
+        point["pm25"] = round(float(point["pm25"]), 1) if point.get("pm25") is not None else round(max(0.0, point["aqi"] / 2.1), 1)
+        point["temperature_c"] = round(float(point["temperature_c"]), 1) if point.get("temperature_c") is not None else None
+        point["humidity"] = round(float(point["humidity"]), 1) if point.get("humidity") is not None else None
         points.append(point)
 
     if len(points) > max_points:
@@ -601,7 +683,9 @@ def _history_for_range(range_key: str, max_points: int = 500) -> dict:
             point["aqi"] = int(point["aqi"])
             point["voltage"] = float(point["voltage"])
             point["fan_on"] = bool(point["fan_on"])
-            point["pm25"] = round(max(0.0, point["aqi"] / 2.1), 1)
+            point["pm25"] = round(float(point["pm25"]), 1) if point.get("pm25") is not None else round(max(0.0, point["aqi"] / 2.1), 1)
+            point["temperature_c"] = round(float(point["temperature_c"]), 1) if point.get("temperature_c") is not None else None
+            point["humidity"] = round(float(point["humidity"]), 1) if point.get("humidity") is not None else None
             points.append(point)
 
     stats = dict(stats_row or {})
@@ -911,9 +995,12 @@ def api_predict():
 @app.route("/api/esp32-debug")
 @require_api_login
 def api_esp32_debug():
+    probe = _probe_esp32_status()
     status = {
         "esp32_url": ESP32_BASE_URL,
         "configured": bool(ESP32_BASE_URL),
+        "reachable": bool(probe.get("ok")),
+        "probe": probe,
         "last_source": state.get("source"),
         "last_error": last_esp32_error,
         "has_last_sample": last_sample is not None,

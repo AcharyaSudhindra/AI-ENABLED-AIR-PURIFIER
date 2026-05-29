@@ -27,6 +27,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
+const char* WIFI_SSID = "Sudhindra";
+const char* WIFI_PASSWORD = "sudhindra2024@";
+
 WebServer server(80);
 
 float thresholdVoltage = 1.20f;
@@ -40,6 +43,8 @@ int sampleIndex = 0;
 bool samplesReady = false;
 
 unsigned long lastDisplayMs = 0;
+unsigned long lastWiFiReconnectMs = 0;
+unsigned long lastDhtMs = 0;
 unsigned long bootMs = 0;
 float latestVoltage = 0.0f;
 int latestAdc = 0;
@@ -47,6 +52,7 @@ int latestAqi = 0;
 float latestPm25 = 0.0f;
 float latestTempC = 0.0f;
 float latestHumidity = 0.0f;
+bool dhtValid = false;
 float pm25Filtered = 0.0f;
 float gp2yBaseVoltage = 0.45f; // initial baseline; tune from serial debug output
 bool gp2yDebug = true;
@@ -84,17 +90,48 @@ float readSmoothedVoltage() {
   return sum / count;
 }
 
-// Set this to the voltage your sensor outputs in normal/clean air
-float mq135BaseVoltage = 1.0f;
+// Calibrated from clean-air readings at boot. Keep the sensor in normal room air while powering on.
+float mq135BaseVoltage = 0.85f;
+const float MQ135_CLEAN_AIR_OFFSET = 0.10f;
+const float MQ135_AQI_FULL_SCALE_VOLTAGE = 1.8f;
+
+void calibrateMq135Baseline() {
+  const int n = 40;
+  float sum = 0.0f;
+  for (int i = 0; i < n; i++) {
+    sum += analogReadMilliVolts(MQ135_PIN) / 1000.0f;
+    delay(25);
+  }
+
+  float cleanAirVoltage = sum / n;
+  mq135BaseVoltage = cleanAirVoltage - MQ135_CLEAN_AIR_OFFSET;
+  if (mq135BaseVoltage < 0.2f) mq135BaseVoltage = 0.2f;
+  if (mq135BaseVoltage > 2.8f) mq135BaseVoltage = 2.8f;
+
+  Serial.print("MQ135 clean-air voltage: ");
+  Serial.print(cleanAirVoltage, 3);
+  Serial.print("V | baseline: ");
+  Serial.print(mq135BaseVoltage, 3);
+  Serial.println("V");
+}
 
 int voltageToAQI(float voltage) {
   float diff = voltage - mq135BaseVoltage;
   if (diff <= 0.0f) return 0;
   
-  // Map a 1.5V increase above baseline to a maximum of 500 AQI
-  int aqi = (int)((diff / 1.5f) * 500.0f);
+  int aqi = (int)((diff / MQ135_AQI_FULL_SCALE_VOLTAGE) * 500.0f);
   if (aqi > 500) return 500;
   return aqi;
+}
+
+void readDhtSensor() {
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  dhtValid = !isnan(t) && !isnan(h);
+  if (dhtValid) {
+    latestTempC = t;
+    latestHumidity = h;
+  }
 }
 
 float readDustPM25Raw() {
@@ -196,17 +233,29 @@ void handleStatus() {
   doc["adc"] = latestAdc;
   doc["voltage"] = latestVoltage;
   doc["aqi"] = latestAqi;
+  doc["mq135_baseline_voltage"] = mq135BaseVoltage;
   doc["pm25"] = latestPm25;
-  doc["temperature_c"] = latestTempC;
-  doc["humidity"] = latestHumidity;
+  if (dhtValid) {
+    doc["temperature_c"] = latestTempC;
+    doc["humidity"] = latestHumidity;
+  } else {
+    doc["temperature_c"] = nullptr;
+    doc["humidity"] = nullptr;
+  }
+  doc["dht_ok"] = dhtValid;
   doc["fan_on"] = fanOn;
   doc["mode"] = autoMode ? "auto" : "manual";
   doc["threshold_voltage"] = thresholdVoltage;
   doc["uptime_sec"] = (millis() - bootMs) / 1000;
+  doc["wifi_connected"] = WiFi.status() == WL_CONNECTED;
+  doc["wifi_ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "";
+  doc["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  doc["hostname"] = "airpurifier.local";
 
   String body;
   serializeJson(doc, body);
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Connection", "close");
   server.send(200, "application/json", body);
 }
 
@@ -315,20 +364,43 @@ void drawOLED(float voltage) {
 }
 
 void connectWiFi() {
-  WiFiManager wm;
-  // Set a 3-minute timeout for the captive portal
-  wm.setConfigPortalTimeout(180);
+  WiFi.mode(WIFI_STA);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  Serial.println("Starting WiFiManager...");
-  // This will auto connect or start an AP named "AirPurifierSetup"
-  bool res = wm.autoConnect("AirPurifierSetup");
+  Serial.println("connecting to wifi");
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED && retries < 30) {
+    delay(500);
+    Serial.print(".");
+    retries++;
+  }
+  Serial.println();
 
-  if (!res) {
-    Serial.println("Failed to connect or hit timeout. Running local only.");
-  } else {
+  if (WiFi.status() == WL_CONNECTED) {
     Serial.print("Connected! IP: ");
     Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("WiFi not connected. Running local only.");
   }
+}
+
+void ensureWiFiConnected() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  unsigned long now = millis();
+  if (now - lastWiFiReconnectMs < 10000) {
+    return;
+  }
+
+  lastWiFiReconnectMs = now;
+  Serial.println("WiFi disconnected. Reconnecting...");
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
 void setup() {
@@ -353,15 +425,13 @@ void setup() {
 
   analogReadResolution(12);
   // analogSetPinAttenuation is deprecated in ESP32 Core 3.x, and 11dB is the default.
+  calibrateMq135Baseline();
   calibrateGp2yBaseline();
   latestVoltage = readSmoothedVoltage();
   latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);
   latestAqi = voltageToAQI(latestVoltage);
   latestPm25 = readDustPM25Stable();
-  latestTempC = dht.readTemperature();
-  latestHumidity = dht.readHumidity();
-  if (isnan(latestTempC)) latestTempC = 0.0f;
-  if (isnan(latestHumidity)) latestHumidity = 0.0f;
+  readDhtSensor();
   connectWiFi();
 
   server.on("/api/status", HTTP_GET, handleStatus);
@@ -392,6 +462,7 @@ void setup() {
 }
 
 void loop() {
+  ensureWiFiConnected();
   server.handleClient();
 
   float voltage = readSmoothedVoltage();
@@ -399,10 +470,11 @@ void loop() {
   latestAdc = (int)((voltage / 3.3f) * 4095.0f);
   latestAqi = voltageToAQI(voltage);
   latestPm25 = readDustPM25Stable();
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
-  if (!isnan(t)) latestTempC = t;
-  if (!isnan(h)) latestHumidity = h;
+  
+  if (millis() - lastDhtMs > 2000) {
+    readDhtSensor();
+    lastDhtMs = millis();
+  }
   updateControl(voltage);
 
   Serial.print("Voltage: ");
