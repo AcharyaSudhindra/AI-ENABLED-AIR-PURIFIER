@@ -9,7 +9,7 @@
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-#define MQ135_PIN 34
+#define MQ135_PIN 4
 #define RELAY_PIN 25
 
 const char* WIFI_SSID = "Sudhindra";

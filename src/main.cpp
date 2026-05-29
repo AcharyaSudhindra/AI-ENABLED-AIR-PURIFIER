@@ -1,16 +1,31 @@
 #include <WiFi.h>
+#include <WiFiManager.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <DHT.h>
+#include <ESPmDNS.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-#define MQ135_PIN 34
-#define RELAY_PIN 25
+#define MQ135_PIN 5
+#define RELAY_PIN 2
+#define DHT_PIN 4
+#define DHT_TYPE DHT11
+
+// Set to 1 to enable the GP2Y1010 dust sensor, 0 to disable
+#define ENABLE_GP2Y1010 0
+#define GP2Y_VO_PIN 6
+#define GP2Y_LED_PIN 7
+
+// Set to 1 for active-LOW relay modules, 0 for active-HIGH modules.
+#define RELAY_ACTIVE_LOW 1
+
+DHT dht(DHT_PIN, DHT_TYPE);
 
 const char* WIFI_SSID = "Sudhindra";
 const char* WIFI_PASSWORD = "sudhindra2024@";
@@ -18,6 +33,7 @@ const char* WIFI_PASSWORD = "sudhindra2024@";
 WebServer server(80);
 
 float thresholdVoltage = 1.20f;
+int aqiFanThreshold = 175;
 bool autoMode = true;
 bool fanOn = false;
 
@@ -25,16 +41,59 @@ const int SAMPLE_COUNT = 12;
 float sampleBuffer[SAMPLE_COUNT];
 int sampleIndex = 0;
 bool samplesReady = false;
+bool aqiInitialized = false;
 
 unsigned long lastDisplayMs = 0;
+unsigned long lastWiFiReconnectMs = 0;
+unsigned long lastDhtMs = 0;
 unsigned long bootMs = 0;
 float latestVoltage = 0.0f;
 int latestAdc = 0;
 int latestAqi = 0;
+float smoothedAqi = 0.0f;
+float latestPm25 = 0.0f;
+float latestTempC = 0.0f;
+float latestHumidity = 0.0f;
+bool dhtValid = false;
+bool dhtEverValid = false;
+float pm25Filtered = 0.0f;
+float gp2yBaseVoltage = 0.45f; // initial baseline; tune from serial debug output
+bool gp2yDebug = true;
+int lastGp2yRaw = 0;
+float lastGp2yVo = 0.0f;
+
+String getAQICategory(int aqi) {
+  if (aqi <= 50)  return "GOOD";
+  if (aqi <= 100) return "MODERATE";
+  if (aqi <= 150) return "UNHEALTHY*";
+  if (aqi <= 200) return "UNHEALTHY";
+  if (aqi <= 300) return "VERY UNHLT";
+  return "HAZARDOUS";
+}
+
+float readMedianVoltage() {
+  const int n = 9;
+  float readings[n];
+  for (int i = 0; i < n; i++) {
+    readings[i] = analogReadMilliVolts(MQ135_PIN) / 1000.0f;
+    delay(2);
+  }
+
+  for (int i = 1; i < n; i++) {
+    float value = readings[i];
+    int j = i - 1;
+    while (j >= 0 && readings[j] > value) {
+      readings[j + 1] = readings[j];
+      j--;
+    }
+    readings[j + 1] = value;
+  }
+
+  return readings[n / 2];
+}
 
 float readSmoothedVoltage() {
-  int raw = analogRead(MQ135_PIN);
-  float voltage = (raw / 4095.0f) * 3.3f;
+  float voltage = readMedianVoltage();
 
   sampleBuffer[sampleIndex] = voltage;
   sampleIndex = (sampleIndex + 1) % SAMPLE_COUNT;
@@ -54,45 +113,189 @@ float readSmoothedVoltage() {
   return sum / count;
 }
 
+// Calibrated from clean-air readings at boot. Keep the sensor in normal room air while powering on.
+float mq135BaseVoltage = 0.85f;
+const float MQ135_CLEAN_AIR_OFFSET = 0.10f;
+const float MQ135_AQI_FULL_SCALE_VOLTAGE = 1.8f;
+
+void calibrateMq135Baseline() {
+  const int n = 40;
+  float sum = 0.0f;
+  for (int i = 0; i < n; i++) {
+    sum += readMedianVoltage();
+    delay(25);
+  }
+
+  float cleanAirVoltage = sum / n;
+  mq135BaseVoltage = cleanAirVoltage - MQ135_CLEAN_AIR_OFFSET;
+  if (mq135BaseVoltage < 0.2f) mq135BaseVoltage = 0.2f;
+  if (mq135BaseVoltage > 2.8f) mq135BaseVoltage = 2.8f;
+
+  Serial.print("MQ135 clean-air voltage: ");
+  Serial.print(cleanAirVoltage, 3);
+  Serial.print("V | baseline: ");
+  Serial.print(mq135BaseVoltage, 3);
+  Serial.println("V");
+}
+
 int voltageToAQI(float voltage) {
-  int aqi = (int)((voltage / 3.3f) * 500.0f);
-  if (aqi < 0) return 0;
+  float diff = voltage - mq135BaseVoltage;
+  if (diff <= 0.0f) return 0;
+  
+  int aqi = (int)((diff / MQ135_AQI_FULL_SCALE_VOLTAGE) * 500.0f);
   if (aqi > 500) return 500;
   return aqi;
 }
 
+int smoothAQI(int rawAqi) {
+  if (!aqiInitialized) {
+    smoothedAqi = rawAqi;
+    aqiInitialized = true;
+  } else {
+    smoothedAqi = (smoothedAqi * 0.85f) + (rawAqi * 0.15f);
+  }
+  return (int)(smoothedAqi + 0.5f);
+}
+
+void readDhtSensor() {
+  lastDhtMs = millis();
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  dhtValid = !isnan(t) && !isnan(h);
+  if (dhtValid) {
+    latestTempC = t;
+    latestHumidity = h;
+    dhtEverValid = true;
+  } else {
+    Serial.print("[DHT ERROR] Temp: ");
+    Serial.print(t);
+    Serial.print(" Hum: ");
+    Serial.println(h);
+  }
+}
+
+float readDustPM25Raw() {
+#if ENABLE_GP2Y1010
+  // GP2Y1010 timing sequence
+  digitalWrite(GP2Y_LED_PIN, LOW);
+  delayMicroseconds(280);
+  int raw = analogRead(GP2Y_VO_PIN);
+  delayMicroseconds(40);
+  digitalWrite(GP2Y_LED_PIN, HIGH);
+  delayMicroseconds(9680);
+
+  float vo = (raw / 4095.0f) * 3.3f;
+  lastGp2yRaw = raw;
+  lastGp2yVo = vo;
+  float dust = (vo - gp2yBaseVoltage) / 0.005f; // ug/m3 approximation
+  if (dust < 0.0f) dust = 0.0f;
+  return dust;
+#else
+  return 0.0f;
+#endif
+}
+
+void calibrateGp2yBaseline() {
+#if ENABLE_GP2Y1010
+  // Calibrate baseline from live pulses at boot so PM2.5 does not stick at 0 due to fixed offset.
+  const int n = 30;
+  float sumVo = 0.0f;
+  for (int i = 0; i < n; i++) {
+    digitalWrite(GP2Y_LED_PIN, LOW);
+    delayMicroseconds(280);
+    int raw = analogRead(GP2Y_VO_PIN);
+    delayMicroseconds(40);
+    digitalWrite(GP2Y_LED_PIN, HIGH);
+    delayMicroseconds(9680);
+    sumVo += (raw / 4095.0f) * 3.3f;
+  }
+  gp2yBaseVoltage = sumVo / n;
+  Serial.print("GP2Y baseline calibrated: ");
+  Serial.print(gp2yBaseVoltage, 3);
+  Serial.println("V");
+#else
+  gp2yBaseVoltage = 0.0f;
+  Serial.println("GP2Y sensor disabled.");
+#endif
+}
+
+float readDustPM25Stable() {
+  // Multi-sample median-ish averaging to reduce spikes.
+  const int n = 5;
+  float vals[n];
+  for (int i = 0; i < n; i++) {
+    vals[i] = readDustPM25Raw();
+  }
+  // Simple trimmed mean: drop min/max.
+  float minv = vals[0], maxv = vals[0], sum = 0.0f;
+  for (int i = 0; i < n; i++) {
+    if (vals[i] < minv) minv = vals[i];
+    if (vals[i] > maxv) maxv = vals[i];
+    sum += vals[i];
+  }
+  float mean = (sum - minv - maxv) / (n - 2);
+
+  // Exponential smoothing to prevent sudden drops to zero.
+  const float alpha = 0.18f;
+  pm25Filtered = (pm25Filtered * (1.0f - alpha)) + (mean * alpha);
+
+  // Keep tiny values visible; avoid hard-clamping to zero.
+  if (pm25Filtered < 0.0f) pm25Filtered = 0.0f;
+  return pm25Filtered;
+}
+
 void setFan(bool on) {
   fanOn = on;
-  digitalWrite(RELAY_PIN, fanOn ? HIGH : LOW);
+  if (RELAY_ACTIVE_LOW) {
+    digitalWrite(RELAY_PIN, fanOn ? LOW : HIGH);
+  } else {
+    digitalWrite(RELAY_PIN, fanOn ? HIGH : LOW);
+  }
 }
 
 void updateControl(float voltage) {
   if (!autoMode) return;
 
-  // Hysteresis avoids rapid relay toggling around threshold.
-  float high = thresholdVoltage + 0.03f;
-  float low = thresholdVoltage - 0.03f;
+  // AQI-based auto control:
+  // fan OFF below 175 AQI, ON at/above 175 AQI (with small hysteresis).
+  int high = aqiFanThreshold;
+  int low = aqiFanThreshold - 5;
 
-  if (!fanOn && voltage >= high) {
+  if (!fanOn && latestAqi >= high) {
     setFan(true);
-  } else if (fanOn && voltage <= low) {
+  } else if (fanOn && latestAqi <= low) {
     setFan(false);
   }
 }
 
 void handleStatus() {
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   doc["adc"] = latestAdc;
   doc["voltage"] = latestVoltage;
   doc["aqi"] = latestAqi;
+  doc["mq135_baseline_voltage"] = mq135BaseVoltage;
+  doc["pm25"] = latestPm25;
+  if (dhtEverValid) {
+    doc["temperature_c"] = latestTempC;
+    doc["humidity"] = latestHumidity;
+  } else {
+    doc["temperature_c"] = nullptr;
+    doc["humidity"] = nullptr;
+  }
+  doc["dht_ok"] = dhtEverValid;
   doc["fan_on"] = fanOn;
   doc["mode"] = autoMode ? "auto" : "manual";
   doc["threshold_voltage"] = thresholdVoltage;
   doc["uptime_sec"] = (millis() - bootMs) / 1000;
+  doc["wifi_connected"] = WiFi.status() == WL_CONNECTED;
+  doc["wifi_ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "";
+  doc["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  doc["hostname"] = "airpurifier.local";
 
   String body;
   serializeJson(doc, body);
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Connection", "close");
   server.send(200, "application/json", body);
 }
 
@@ -102,27 +305,27 @@ void handleControl() {
     return;
   }
 
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) {
     server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
     return;
   }
 
-  if (doc.containsKey("mode")) {
+  if (doc["mode"].is<const char*>()) {
     String mode = doc["mode"].as<String>();
     mode.toLowerCase();
     autoMode = (mode == "auto");
   }
 
-  if (doc.containsKey("threshold_voltage")) {
+  if (doc["threshold_voltage"].is<float>() || doc["threshold_voltage"].is<int>()) {
     float t = doc["threshold_voltage"].as<float>();
     if (t >= 0.2f && t <= 3.0f) {
       thresholdVoltage = t;
     }
   }
 
-  if (doc.containsKey("fan_on") && !autoMode) {
+  if ((doc["fan_on"].is<bool>() || doc["fan_on"].is<int>()) && !autoMode) {
     bool requested = doc["fan_on"].as<bool>();
     setFan(requested);
   }
@@ -131,43 +334,81 @@ void handleControl() {
 }
 
 void drawOLED(float voltage) {
-  int adc = (int)((voltage / 3.3f) * 4095.0f);
-  int aqi = voltageToAQI(voltage);
-
   display.clearDisplay();
+
+  // ── Title Bar ──
+  display.fillRect(0, 0, SCREEN_WIDTH, 12, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
   display.setTextSize(1);
+  display.setCursor(22, 2);
+  display.print("AIR PURIFIER v1.0");
+
+  // ── AQI Value (large) ──
   display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(0, 16);
+  display.print("AQI:");
+  display.print(latestAqi);
 
-  display.setCursor(0, 0);
-  display.println("Air Purifier ESP32");
+  // ── AQI Category & PM2.5 ──
+  display.setTextSize(1);
+  display.setCursor(0, 36);
+  display.print(getAQICategory(latestAqi));
+  display.print(" PM:");
+  display.print((int)latestPm25);
 
-  display.setCursor(0, 14);
-  display.print("ADC: ");
-  display.println(adc);
+  // ── Divider ──
+  display.drawLine(0, 46, SCREEN_WIDTH, 46, SSD1306_WHITE);
 
-  display.setCursor(0, 26);
-  display.print("Volt: ");
-  display.print(voltage, 2);
-  display.println("V");
-
-  display.setCursor(0, 38);
-  display.print("AQI: ");
-  display.println(aqi);
-
+  // ── Temperature & Humidity ──
+  display.setTextSize(1);
   display.setCursor(0, 50);
-  display.print("Fan:");
-  display.print(fanOn ? "ON " : "OFF");
-  display.print(" ");
-  display.print(autoMode ? "A" : "M");
+  display.print("T:");
+  if (!dhtEverValid) {
+    display.print("--");
+  } else {
+    display.print(latestTempC, 1);
+    display.print("C");
+  }
+
+  display.setCursor(55, 50);
+  display.print("H:");
+  if (!dhtEverValid) {
+    display.print("--");
+  } else {
+    display.print(latestHumidity, 1);
+    display.print("%");
+  }
+
+  // ── Fan Status (right side) ──
+  display.setTextSize(1);
+  if (fanOn) {
+    display.fillRoundRect(88, 14, 40, 28, 4, SSD1306_WHITE);
+    display.setTextColor(SSD1306_BLACK);
+    display.setCursor(93, 18);
+    display.print(" FAN");
+    display.setCursor(95, 28);
+    display.print(" ON");
+    display.setTextColor(SSD1306_WHITE);
+  } else {
+    display.drawRoundRect(88, 14, 40, 28, 4, SSD1306_WHITE);
+    display.setCursor(93, 18);
+    display.print(" FAN");
+    display.setCursor(94, 28);
+    display.print(" OFF");
+  }
 
   display.display();
 }
 
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  Serial.print("Connecting WiFi");
+  Serial.println("connecting to wifi");
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED && retries < 30) {
     delay(500);
@@ -177,34 +418,74 @@ void connectWiFi() {
   Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Connected. IP: ");
+    Serial.print("Connected! IP: ");
     Serial.println(WiFi.localIP());
   } else {
     Serial.println("WiFi not connected. Running local only.");
   }
 }
 
+void ensureWiFiConnected() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  unsigned long now = millis();
+  if (now - lastWiFiReconnectMs < 10000) {
+    return;
+  }
+
+  lastWiFiReconnectMs = now;
+  Serial.println("WiFi disconnected. Reconnecting...");
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
 void setup() {
   Serial.begin(115200);
   bootMs = millis();
+  Serial.print("Relay polarity: ");
+  Serial.println(RELAY_ACTIVE_LOW ? "ACTIVE_LOW" : "ACTIVE_HIGH");
 
   pinMode(RELAY_PIN, OUTPUT);
+#if ENABLE_GP2Y1010
+  pinMode(GP2Y_LED_PIN, OUTPUT);
+  digitalWrite(GP2Y_LED_PIN, HIGH);
+#endif
+  dht.begin();
   setFan(false);
 
+  Wire.begin(8, 9); // ESP32-S3 default SDA=8, SCL=9
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("SSD1306 allocation failed");
     for (;;) {}
   }
 
   analogReadResolution(12);
+  // analogSetPinAttenuation is deprecated in ESP32 Core 3.x, and 11dB is the default.
+  calibrateMq135Baseline();
+  calibrateGp2yBaseline();
   latestVoltage = readSmoothedVoltage();
   latestAdc = (int)((latestVoltage / 3.3f) * 4095.0f);
-  latestAqi = voltageToAQI(latestVoltage);
+  latestAqi = smoothAQI(voltageToAQI(latestVoltage));
+  latestPm25 = readDustPM25Stable();
+  
+  // Give DHT11 more time to warm up. It will be read in loop() after 2.5s
   connectWiFi();
 
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/control", HTTP_POST, handleControl);
   server.begin();
+
+  // Start mDNS so Xiaozhi can find us as "airpurifier.local"
+  if (WiFi.status() == WL_CONNECTED) {
+    if (MDNS.begin("airpurifier")) {
+      MDNS.addService("http", "tcp", 80);
+      Serial.println("mDNS started: airpurifier.local");
+    } else {
+      Serial.println("mDNS failed to start");
+    }
+  }
 
   display.clearDisplay();
   display.setTextSize(1);
@@ -220,18 +501,41 @@ void setup() {
 }
 
 void loop() {
+  ensureWiFiConnected();
   server.handleClient();
 
   float voltage = readSmoothedVoltage();
   latestVoltage = voltage;
   latestAdc = (int)((voltage / 3.3f) * 4095.0f);
-  latestAqi = voltageToAQI(voltage);
+  latestAqi = smoothAQI(voltageToAQI(voltage));
+  latestPm25 = readDustPM25Stable();
+  
+  if (millis() - lastDhtMs > 2500) {
+    readDhtSensor();
+  }
   updateControl(voltage);
 
   Serial.print("Voltage: ");
   Serial.print(voltage, 3);
   Serial.print(" V | Fan: ");
-  Serial.println(fanOn ? "ON" : "OFF");
+  Serial.print(fanOn ? "ON" : "OFF");
+  Serial.print(" | PM2.5: ");
+  Serial.print(latestPm25, 1);
+  Serial.print(" | T: ");
+  Serial.print(latestTempC, 1);
+  Serial.print("C | H: ");
+  Serial.print(latestHumidity, 0);
+  Serial.print("%");
+  if (gp2yDebug) {
+    Serial.print(" | GP2Y raw: ");
+    Serial.print(lastGp2yRaw);
+    Serial.print(" | VO: ");
+    Serial.print(lastGp2yVo, 3);
+    Serial.print("V | base: ");
+    Serial.print(gp2yBaseVoltage, 3);
+    Serial.print("V");
+  }
+  Serial.println();
 
   if (millis() - lastDisplayMs > 1000) {
     drawOLED(voltage);

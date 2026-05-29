@@ -6,6 +6,14 @@
 </section>
 
 <section class="glass panel chatbox">
+  <div class="controls" style="margin-bottom:10px;">
+    <label>Chatbot API Key</label>
+    <div class="chat-input">
+      <input id="apiKeyInput" type="password" placeholder="Enter API key">
+      <button id="saveApiKeyBtn" class="secondary">Save Key</button>
+    </div>
+    <p id="apiKeyStatus" class="mini">Key status: not set</p>
+  </div>
   <div class="quick-row">
     <button class="chip" data-q="current status">Current Status</button>
     <button class="chip" data-q="daily report">Daily Report</button>

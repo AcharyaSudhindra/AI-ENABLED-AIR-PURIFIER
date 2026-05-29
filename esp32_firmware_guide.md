@@ -4,13 +4,13 @@
 
 | Sensor         | ESP32-S3 Pin |
 |----------------|--------------|
-| MQ135 AOUT     | GPIO 1 (ADC) |
-| GP2Y1010 VO    | GPIO 2 (ADC) |
-| GP2Y1010 LED   | GPIO 3 (PWM) |
+| MQ135 AOUT     | GPIO 5 (ADC) |
+| GP2Y1010 VO    | GPIO 6 (ADC) |
+| GP2Y1010 LED   | GPIO 7       |
 | OLED SDA       | GPIO 8       |
 | OLED SCL       | GPIO 9       |
-| Relay IN1      | GPIO 10      |
-| Relay IN2      | GPIO 11      |
+| Relay          | GPIO 25      |
+| DHT Sensor     | GPIO 4       |
 
 ## Required Libraries (Arduino IDE)
 - `WiFi.h` (built-in)
@@ -32,10 +32,11 @@ const char* ssid     = "YOUR_SSID";
 const char* password = "YOUR_PASSWORD";
 
 // Pin definitions
-#define MQ135_PIN     1
-#define GP2Y_VO_PIN   2
-#define GP2Y_LED_PIN  3
-#define RELAY_PIN     10
+#define MQ135_PIN     5
+#define GP2Y_VO_PIN   6
+#define GP2Y_LED_PIN  7
+#define RELAY_PIN     25
+#define DHT_PIN       4
 
 WebServer server(80);
 Adafruit_SSD1306 display(128, 64, &Wire);

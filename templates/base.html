@@ -3,18 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="view-transition" content="same-origin">
   <title>AirGuard Pro</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Clash+Display:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
+<body class="page-enter">
   <div class="bgfx"></div>
+  <div class="bg-grain"></div>
+  <div id="particles-container"></div>
+  <div class="bg-vignette"></div>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+  <div class="bg-orb orb-c"></div>
+  <div id="appToast" class="toast"></div>
+  <button class="hamburger" id="hamburgerBtn" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="layout">
-    <aside class="sidebar glass">
+    <aside class="sidebar glass" id="sidebarEl">
       <h2>AirGuard Pro</h2>
+      <p class="mini"><span class="conn-dot" id="connDot"></span><span class="conn-label" id="connLabel">Checking...</span></p>
       <p class="mini">{{ user }} ({{ role }})</p>
       <nav>
         <a href="/dashboard">Dashboard</a>
@@ -28,5 +41,18 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  
+  <!-- Voice Control UI -->
+  <button id="voiceBtn" class="voice-btn" title="Click to use Voice Control">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="22"/>
+    </svg>
+  </button>
+  <div id="voiceToast" class="voice-toast">Listening...</div>
+
+  <script src="/static/ui-animations.js?v=20260523a"></script>
+  <script src="/static/voice-control.js?v=1"></script>
 </body>
 </html>
