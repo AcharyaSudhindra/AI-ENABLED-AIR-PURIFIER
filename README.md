@@ -1,138 +1,122 @@
-AirGuard Pro - ESP32 Smart Air Purifier Dashboard
+# 🌬️ AirGuard Pro - Smart Air Purifier & Monitor
 
-AirGuard Pro is a smart air quality monitoring and purifier control platform using an ESP32 + Flask web dashboard.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/AcharyaSudhindra/ai_based-air-purifier)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange)](https://platformio.org/)
+[![Flask](https://img.shields.io/badge/Flask-Web%20App-lightgrey)](https://flask.palletsprojects.com/)
 
-FEATURES
+AirGuard Pro is an advanced, AI-enabled smart air quality monitoring and purifier control platform powered by an **ESP32** microcontroller and a **Flask** web dashboard. 
 
-- Live ESP32 sensor monitoring (AQI, ADC, Voltage, Fan status)
-- OLED + Web synchronization
-- Real-time dashboard (SSE stream + polling fallback)
-- Auto/manual purifier control
-- Predictive AQI forecast (next 2 hours)
-- Filter Health Intelligence (runtime/load based)
-- Daily AQI reports
-- Role-based login (admin/viewer)
-- Chat assistant for recommendations
-- Persistent logging to SQLite + CSV
+It provides real-time tracking, intelligent filtering recommendations, predictive AQI forecasting, and now features an integrated **XiaoZhi AI Voice Assistant** module for voice-activated interactions.
 
-PROJECT STRUCTURE
+---
 
-ai_based air purifier/
-|- app.py
-|- requirements.txt
-|- platformio.ini
-|- src/
-|  |- main.cpp
-|- templates/
-|  |- base.html
-|  |- login.html
-|  |- dashboard.html
-|  |- reports.html
-|  |- controls.html
-|  \- chatbot.html
-|- static/
-|  |- styles.css
-|  |- dashboard.js
-|  |- reports.js
-|  |- controls.js
-|  \- chatbot.js
-|- data/
-|  \- airguard.db
-\- logs/
-   \- air_readings.csv
+## ✨ Features
 
-HARDWARE
+- **Live ESP32 Sensor Monitoring**: Tracks Air Quality Index (AQI), raw ADC values, voltage, and fan status in real-time.
+- **Hardware Integration**: OLED display on the device stays perfectly synchronized with the web dashboard.
+- **Real-Time Web Dashboard**: Built with SSE streams for live updates and fallback polling.
+- **Automated Intelligence**: Auto/manual modes for the purifier with Filter Health Intelligence based on runtime and load.
+- **Predictive Analytics**: AQI forecasting for the next 2 hours.
+- **AI Voice Assistant**: An integrated conversational AI module (`ai_assistant/`) that allows users to interact with the system and control smart appliances using large language models.
+- **Secure Access**: Role-based login system separating `admin` and `viewer` privileges.
+- **Data Persistence**: Persistent logging to SQLite and CSV formats.
 
-- ESP32 board
-- MQ135 gas sensor (analog)
-- Relay module (fan control)
-- SSD1306 OLED (128x64 I2C)
-- GP2Y101 Dust sensor
+## 📁 Project Structure
 
+```text
+ai_based_air_purifier/
+├── ai_assistant/        # Integrated XiaoZhi AI Voice Chatbot Module
+├── src/                 # ESP32 C++ Firmware Source Code
+├── templates/           # Flask HTML Templates
+├── static/              # CSS, JS, and Frontend Assets
+├── data/                # SQLite Database (airguard.db)
+├── logs/                # CSV Data Logs
+├── app.py               # Main Flask Backend Server
+├── platformio.ini       # PlatformIO configuration
+└── requirements.txt     # Python Dependencies
+```
 
-FIRMWARE SETUP (VS CODE + PLATFORMIO)
+## 🛠️ Hardware Requirements
 
-1. Install VS Code extension: PlatformIO IDE
-2. Open this project folder
-3. Update Wi-Fi in src/main.cpp:
+- **ESP32 Development Board**
+- **MQ135 Gas Sensor (Analog)** - For detecting harmful gases and measuring overall AQI.
+- **Relay Module** - For controlling the air purifier fan.
+- **SSD1306 OLED Display (128x64 I2C)** - For on-device status readout.
+- **GP2Y101 Dust Sensor** - For particulate matter measurement.
+- *(Optional)* AI Voice Module Hardware (Refer to `ai_assistant/README.md`)
+
+## 🚀 Getting Started
+
+### 1. Firmware Setup (VS Code + PlatformIO)
+
+1. Install the **PlatformIO IDE** extension in VS Code.
+2. Open this project folder.
+3. Update the Wi-Fi credentials in `src/main.cpp`:
+   ```cpp
    const char* WIFI_SSID = "YOUR_WIFI";
    const char* WIFI_PASSWORD = "YOUR_PASSWORD";
-4. Build and Upload in PlatformIO
-5. Open Serial Monitor (115200) and note ESP32 IP
+   ```
+4. Click **Build** and **Upload** in PlatformIO to flash the firmware.
+5. Open the Serial Monitor (Baud rate: 115200) and note the ESP32 IP address.
 
-WEB APP SETUP
+### 2. Web Dashboard Setup
 
-1. Install dependencies:
+1. Install Python dependencies:
+   ```bash
    pip install -r requirements.txt
-
-2. Run with ESP32 IP:
-   PowerShell:
+   ```
+2. Set the Environment Variable for the ESP32 IP and run the app (PowerShell example):
+   ```powershell
    $env:ESP32_BASE_URL="http://192.168.x.x"
    python app.py
+   ```
+3. Access the dashboard via your browser: `http://127.0.0.1:5000/login`
 
-3. Open:
-   http://127.0.0.1:5000/login
+### 3. Default Login Credentials
 
-DEFAULT LOGIN
+| Role | Username | Password |
+|------|----------|----------|
+| **Admin** | `admin` | `admin123` |
+| **Viewer** | `viewer` | `viewer123` |
 
-- Admin: admin / admin123
-- Viewer: viewer / viewer123
+> **Security Note**: It is highly recommended to override these default credentials using environment variables (`AIRGUARD_ADMIN_USER`, `AIRGUARD_ADMIN_PASS`, etc.) and to set a secure `FLASK_SECRET_KEY` before deployment.
 
-Recommended Env Overrides:
-- AIRGUARD_ADMIN_USER
-- AIRGUARD_ADMIN_PASS
-- AIRGUARD_VIEWER_USER
-- AIRGUARD_VIEWER_PASS
-- FLASK_SECRET_KEY
+---
 
-API ENDPOINTS
+## 📡 API Endpoints
 
-Core:
-- GET /api/live
-- GET /api/stream
-- GET /api/history?points=60
-- GET /api/settings
-- POST /api/settings (admin)
-- POST /api/fan (admin)
+### Core Dashboard
+- `GET /api/live` - Fetch live sensor data.
+- `GET /api/stream` - SSE stream endpoint.
+- `GET /api/history?points=60` - Fetch historical readings.
+- `GET /api/settings` - Retrieve current system configurations.
+- `POST /api/settings` *(Admin)* - Update configurations.
+- `POST /api/fan` *(Admin)* - Toggle the fan state manually.
 
-Intelligence:
-- GET /api/reports/summary
-- GET /api/reports/daily?days=7
-- GET /api/predict?horizon=12
-- GET /api/filter-health
-- POST /api/filter/reset (admin)
+### Intelligence & Reports
+- `GET /api/reports/summary` - General air quality summary.
+- `GET /api/reports/daily?days=7` - Daily breakdown over the last week.
+- `GET /api/predict?horizon=12` - AQI predictions.
+- `GET /api/filter-health` - Check current filter lifespan and load.
+- `POST /api/filter/reset` *(Admin)* - Reset filter health tracking.
 
-Chat:
-- POST /api/chat
-  body: { "message": "current status" }
+### Chat Assistant
+- `POST /api/chat` - Interact with the built-in recommendation system.
 
-DATA STORAGE
+---
 
-- SQLite DB: data/airguard.db
-- CSV log: logs/air_readings.csv
+## 🔧 Troubleshooting
 
-SOURCE STATUS MEANING
+**Dashboard not syncing with OLED?**
+- Verify the `ESP32_BASE_URL` is correct.
+- Hard refresh the browser (`Ctrl+F5`).
+- Ensure the ESP32 is powered and reachable (`http://<ESP32_IP>/api/status`).
 
-- esp32 -> live board data
-- esp32-stale -> last known board sample
-- esp32-offline -> board unreachable / URL not configured
+**ESP32 Wi-Fi fails to connect?**
+- Ensure your network is `2.4GHz` (ESP32 does not support 5GHz).
+- Double-check the exact spelling and casing of the SSID and password.
 
-TROUBLESHOOTING
+---
 
-Dashboard not syncing with OLED:
-- Re-upload firmware
-- Set correct ESP32_BASE_URL
-- Restart Flask
-- Hard refresh browser (Ctrl+F5)
-- Test board endpoint: http://<ESP32_IP>/api/status
-
-ESP32 Wi-Fi fails:
-- Use 2.4 GHz Wi-Fi/hotspot
-- Recheck SSID/password (case sensitive)
-- Keep board near router/phone hotspot
-
-SECURITY NOTES
-
-- Change default credentials
-- Set FLASK_SECRET_KEY
-- For HTTPS deployments set COOKIE_SECURE=1
+## 📄 License
+This platform integrates multiple open-source components. For details regarding the AI Chatbot module licensing, see `ai_assistant/LICENSE`.
